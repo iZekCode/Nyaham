@@ -1,21 +1,21 @@
 # systemd unit for a non-Docker VM deploy (§8.2).
 # Install:
-#   sudo cp deploy/ihsg-bot.service /etc/systemd/system/
+#   sudo cp deploy/nyaham-bot.service /etc/systemd/system/
 #   (edit User, WorkingDirectory, and paths below to match your box)
-#   sudo systemctl daemon-reload && sudo systemctl enable --now ihsg-bot
-# Logs:   journalctl -u ihsg-bot -f
+#   sudo systemctl daemon-reload && sudo systemctl enable --now nyaham-bot
+# Logs:   journalctl -u nyaham-bot -f
 
 [Unit]
-Description=IHSG MA Screener Telegram bot
+Description=Nyaham IHSG MA Screener Telegram bot
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/ihsg-skem-bot
-EnvironmentFile=/home/ubuntu/ihsg-skem-bot/.env
-ExecStart=/home/ubuntu/ihsg-skem-bot/.venv/bin/python -m bot.main
+WorkingDirectory=/home/ubuntu/nyaham-bot
+EnvironmentFile=/home/ubuntu/nyaham-bot/.env
+ExecStart=/home/ubuntu/nyaham-bot/.venv/bin/python -m bot.main
 Restart=always
 RestartSec=10
 # Give the daily scan (a few minutes) room; don't kill mid-scan.

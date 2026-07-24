@@ -1,12 +1,17 @@
 # Deploy the bot with:  docker compose -f deploy/docker-compose.yml up -d --build
 # Run from the repo root so the build context (.) is the project.
+
+# Project name — otherwise it defaults to the folder ("deploy"), which is what
+# names the network/group. Sets the compose project to "nyaham".
+name: nyaham
+
 services:
   bot:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: ihsg-skem-bot:latest
-    container_name: ihsg-skem-bot
+    image: nyaham-bot:latest
+    container_name: nyaham-bot
     restart: unless-stopped        # auto-restart on crash / reboot (§8.2)
     # PTB may be mid getUpdates long-poll when SIGTERM lands; give it room to
     # shut down gracefully (and send the "Bot stopped" notice) before SIGKILL.

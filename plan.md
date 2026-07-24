@@ -43,7 +43,7 @@ All screener logic derives from these 5 rules:
 ## 3. Repository Structure
 
 ```
-ihsg-skem-bot/
+nyaham-bot/
 ├── .env.example           # BOT_TOKEN, ADMIN_CHAT_ID (never commit real .env)
 ├── config.py              # thresholds, MA periods, scan schedule, paths
 ├── universe.py            # ticker lists: LQ45, IDX80, Kompas100 + merge/dedup

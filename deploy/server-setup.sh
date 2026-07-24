@@ -44,11 +44,11 @@ Docker is installed. Log out and back in (or run: newgrp docker)
 so the group change takes effect, then:
 
   1. Get the code onto this box (pick ONE):
-       git clone <your-private-repo-url> ihsg-skem-bot
+       git clone <your-private-repo-url> nyaham-bot
        # or from your Mac:  rsync -av --exclude .venv --exclude data \
-       #     --exclude logs ./ ubuntu@<server-ip>:~/ihsg-skem-bot/
+       #     --exclude logs ./ ubuntu@<server-ip>:~/nyaham-bot/
 
-  2. cd ihsg-skem-bot
+  2. cd nyaham-bot
      cp .env.example .env
      nano .env            # set BOT_TOKEN + ADMIN_CHAT_ID (use a token that is
                           # NOT also running on your laptop!)

@@ -32,7 +32,7 @@ Any Linux box with Docker **or** Python 3.11 works. Two deploy paths follow.
 Reproducible, auto-restarts, isolates dependencies. Works on ARM and x86.
 
 ```bash
-git clone <repo> ihsg-skem-bot && cd ihsg-skem-bot
+git clone <repo> nyaham-bot && cd nyaham-bot
 cp .env.example .env          # then edit: BOT_TOKEN, ADMIN_CHAT_ID
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
@@ -50,15 +50,15 @@ docker compose -f deploy/docker-compose.yml down         # stop
 ## 2b. Deploy — systemd (no Docker)
 
 ```bash
-git clone <repo> ihsg-skem-bot && cd ihsg-skem-bot
+git clone <repo> nyaham-bot && cd nyaham-bot
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env          # edit secrets; also set LOG_FILE=logs/bot.log
 
 # Edit User/paths in the unit to match your box, then:
-sudo cp deploy/ihsg-bot.service /etc/systemd/system/
+sudo cp deploy/nyaham-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now ihsg-bot
-journalctl -u ihsg-bot -f      # follow logs
+sudo systemctl enable --now nyaham-bot
+journalctl -u nyaham-bot -f      # follow logs
 ```
 
 `Restart=always` handles crashes; `enable` starts it on boot.
@@ -101,7 +101,7 @@ takes a consistent online snapshot and prunes old copies.
 
 ```bash
 # Weekly, Sundays 02:00 — crontab -e:
-0 2 * * 0  /home/ubuntu/ihsg-skem-bot/deploy/backup.sh >> /home/ubuntu/ihsg-skem-bot/logs/backup.log 2>&1
+0 2 * * 0  /home/ubuntu/nyaham-bot/deploy/backup.sh >> /home/ubuntu/nyaham-bot/logs/backup.log 2>&1
 ```
 
 Backups land in `backups/` (gitignored). Restore = stop the bot, copy a
@@ -116,7 +116,7 @@ Backups land in `backups/` (gitignored). Restore = stop the bot, copy a
 | **Universe refresh** | After each IDX rebalancing (~Feb & Aug) | Update the lists in [universe.py](universe.py) from the official IDX index constituents; bump `EFFECTIVE_DATE`; `python universe.py` to sanity-check the size (~100–120). See the procedure at the bottom of that file. |
 | **Holiday calendar** | Yearly (Dec/Jan) | Fill in `IDX_HOLIDAYS_20XX` in [config.py](config.py) from the IDX "Kalender Libur Bursa" — **including movable religious holidays + cuti bersama** (the current list is fixed-date only and incomplete). A missing holiday just wastes one scan; it never marks a real trading day as closed. |
 | **Dependency updates** | Occasionally | `pip install -U -r requirements.txt` in a branch, run `pytest`, redeploy. yfinance breaks most often — it's isolated in `data/fetcher.py`. |
-| **Redeploy after code changes** | As needed | Docker: `up -d --build`. systemd: `git pull && systemctl restart ihsg-bot`. Always stop the old instance first. |
+| **Redeploy after code changes** | As needed | Docker: `up -d --build`. systemd: `git pull && systemctl restart nyaham-bot`. Always stop the old instance first. |
 
 ---
 

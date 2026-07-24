@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Weekly SQLite backup (§8.2). Uses the online-backup API so it's safe while
 # the bot is running. Schedule via cron, e.g. Sundays 02:00:
-#   0 2 * * 0  /home/ubuntu/ihsg-skem-bot/deploy/backup.sh >> /home/ubuntu/ihsg-skem-bot/logs/backup.log 2>&1
+#   0 2 * * 0  /home/ubuntu/nyaham-bot/deploy/backup.sh >> /home/ubuntu/nyaham-bot/logs/backup.log 2>&1
 set -euo pipefail
 
 # Repo root = parent of this script's dir (works regardless of cwd).
