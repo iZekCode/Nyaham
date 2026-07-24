@@ -61,22 +61,31 @@ def round_to_tick(price: float, direction: str = "nearest") -> int:
 # Moving averages
 # --------------------------------------------------------------------------- #
 def moving_averages(
-    df: pd.DataFrame, periods: tuple[int, ...] = MA_PERIODS
+    df: pd.DataFrame,
+    periods: tuple[int, ...] = MA_PERIODS,
+    cache: Optional[dict[int, pd.Series]] = None,
 ) -> dict[int, pd.Series]:
     """Rolling-mean MA of Close for each period.
 
     Series with fewer than ``period`` valid points are NaN at the head, which
     is the correct pandas behavior (``min_periods=period``).
+
+    ``cache`` lets the backtester supply precomputed MA series (aligned to
+    ``df``) so the rolling means aren't recomputed on every bar.
     """
+    if cache is not None:
+        return {p: cache[p] for p in periods if p in cache}
     close = df["Close"]
     return {p: close.rolling(window=p, min_periods=p).mean() for p in periods}
 
 
 def latest_ma_values(
-    df: pd.DataFrame, periods: tuple[int, ...] = MA_PERIODS
+    df: pd.DataFrame,
+    periods: tuple[int, ...] = MA_PERIODS,
+    cache: Optional[dict[int, pd.Series]] = None,
 ) -> dict[int, Optional[float]]:
     """Most recent MA value per period (None if not enough history)."""
-    mas = moving_averages(df, periods)
+    mas = moving_averages(df, periods, cache)
     out: dict[int, Optional[float]] = {}
     for p, series in mas.items():
         val = series.iloc[-1] if len(series) else float("nan")

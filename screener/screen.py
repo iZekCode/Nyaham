@@ -13,15 +13,20 @@ import pandas as pd
 
 from data.fetcher import get_ohlcv, get_ohlcv_cached
 from screener import rules, scoring
+from screener.params import Params
 from screener.result import ScreenResult
 
 
 def screen_dataframe(
-    ticker: str, df: pd.DataFrame, quality, scan_date: Optional[str] = None
+    ticker: str,
+    df: pd.DataFrame,
+    quality,
+    scan_date: Optional[str] = None,
+    params: Optional[Params] = None,
 ) -> ScreenResult:
     """Evaluate + score an already-fetched DataFrame (used by the backtester)."""
-    res = rules.evaluate(ticker, df, quality=quality, scan_date=scan_date)
-    scoring.compute_score(res)
+    res = rules.evaluate(ticker, df, quality=quality, scan_date=scan_date, params=params)
+    scoring.compute_score(res, params)
     return res
 
 

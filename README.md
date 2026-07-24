@@ -14,7 +14,7 @@ serves the results over Telegram. See [plan.md](plan.md) for the full design.
 | **1** | Screener core (universe, fetcher, indicators, rules, scoring, chart) + tests | ✅ Done |
 | **2** | Telegram bot (PTB): `/ma`, `/top5`, `/help`, `/start`, `/scan` + formatter | ✅ Done |
 | **3** | Scheduled daily scan + SQLite scan cache + OHLCV bar cache + trading calendar | ✅ Done |
-| 4 | Backtest + parameter tuning | ⏳ Next |
+| **4** | Backtest engine + metrics + grid-search tuner | ✅ Built — ⚠️ strategy underperforms (see below) |
 | 5 | Deployment + ops | — |
 
 ## Setup
@@ -104,6 +104,29 @@ tests/               MA math + rule-trigger + formatter scenarios
 Key thresholds (`NEAR_MA_THRESHOLD` 2%, `FAR_MA_THRESHOLD` 5%,
 `SUPPORT_LOOKBACK` 5 days, `MIN_BARS` 250) live in `config.py` and will be
 tuned by the Phase 4 backtest.
+
+## Backtest (Phase 4)
+
+```bash
+python -m backtest --limit 20 --period 3y      # report on 20 tickers
+python -m backtest --tune --limit 20           # grid-search parameter tuning
+```
+
+The engine reuses `rules.evaluate` unchanged (no look-ahead: signal on day *t*
+is evaluated on the slice through *t*, entry fills at the *t+1* open). Metrics,
+benchmarks (buy-and-hold IHSG + equal-weight universe), and an equity-curve
+CSV/PNG are written to `backtest/output/`.
+
+> ⚠️ **Honest finding:** with the plan's initial default thresholds — and across
+> the **entire** tuning grid — the strategy **loses money and underperforms
+> buy-and-hold**. Average holding is ~1 day: trades stop out almost immediately
+> because the MA-based stop sits just below the entry (the entry condition is
+> "near support", so the next MA down is very close, especially in clustered-MA
+> zones). No parameter set in the grid rescues it. Deliberately, **no losing
+> parameters were written into `config.py`.** The strategy logic needs
+> refinement (wider/ATR stops, cluster-as-zone stops, a trend filter, longer
+> holds) before it's worth deploying signals. **Full write-up:**
+> [backtest/FINDINGS.md](backtest/FINDINGS.md).
 
 ## Notes & caveats
 
