@@ -4,14 +4,13 @@ Reuses ``rules.evaluate`` unchanged: the signal on day *t* is produced by
 evaluating the DataFrame sliced through day *t*, so there is no look-ahead and
 the code being tested is the code that runs live.
 
-Trade model
+Trade model (v2 exit framework — see backtest/FINDINGS.md)
 -----------
 - **Entry**: a BUY signal at the close of day *t* fills at the **open of t+1**.
-- **Exits** (checked each held day, in priority order):
-    1. Stop-loss — day's Low ≤ stop  → fill at ``stop`` (intraday).
-    2. Take-profit — day's High ≥ tp → fill at ``tp`` (intraday).
-       (If both are touched the same day we assume the stop hit first.)
-    3. SELL signal (rule 4) at the close → fill at that close.
+- **Exit**: when day *t*'s close is below the exit MA (MA50) — i.e. the
+  evaluated result's exit-MA status is "below", or the signal is SELL — the
+  position exits at that close. No take-profit, no intraday stop: the exit is
+  a condition, not a price target.
 - One open position per ticker at a time.
 - Costs: ``FEE_BUY`` on entry, ``FEE_SELL`` on exit (config).
 
@@ -41,7 +40,7 @@ class Trade:
     entry_price: float
     exit_price: float
     holding_days: int
-    exit_reason: str          # "stop" | "tp" | "sell_signal" | "eod"
+    exit_reason: str          # "ma_exit" | "eod" (legacy: stop/tp/sell_signal)
     gross_return: float       # (exit/entry) - 1, before costs
     net_return: float         # after round-trip fees
 
@@ -67,8 +66,6 @@ def backtest_ticker(
     df = df.dropna(subset=["Open", "High", "Low", "Close"])
     n = len(df)
     opens = df["Open"].to_numpy(dtype=float)
-    highs = df["High"].to_numpy(dtype=float)
-    lows = df["Low"].to_numpy(dtype=float)
     closes = df["Close"].to_numpy(dtype=float)
     dates = [str(d.date()) for d in df.index]
 
@@ -82,6 +79,13 @@ def backtest_ticker(
         return rules.evaluate(
             ticker, sl, quality=DataQuality.OK, params=params, ma_cache=cache
         )
+
+    def _exit_ma_broken(res) -> bool:
+        """True when the close is below the exit MA (v2 exit condition)."""
+        exit_ma = next(
+            (m for m in res.ma if m.period == params.exit_ma_period), None
+        )
+        return exit_ma is not None and not exit_ma.above
 
     trades: list[Trade] = []
     position: Optional[dict] = None
@@ -97,28 +101,20 @@ def backtest_ticker(
                 position = {
                     "entry_i": entry_i,
                     "entry_price": opens[entry_i],
-                    "stop": res.stop_loss,
-                    "tp": res.sell_at,
                 }
                 i = entry_i  # start checking exits from the entry bar
                 continue
             i += 1
             continue
 
-        # --- holding: check exits on bar i ------------------------------- #
+        # --- holding: v2 exit — daily close below the exit MA ------------ #
         entry_price = position["entry_price"]
-        stop, tp = position["stop"], position["tp"]
         exit_price: Optional[float] = None
         reason = ""
 
-        if stop and lows[i] <= stop:
-            exit_price, reason = float(stop), "stop"
-        elif tp and highs[i] >= tp:
-            exit_price, reason = float(tp), "tp"
-        else:
-            res = _eval(i)
-            if res.signal is Signal.SELL:
-                exit_price, reason = closes[i], "sell_signal"
+        res = _eval(i)
+        if res.signal is Signal.SELL or _exit_ma_broken(res):
+            exit_price, reason = closes[i], "ma_exit"
 
         if exit_price is not None:
             gross, net = _net_return(entry_price, exit_price)

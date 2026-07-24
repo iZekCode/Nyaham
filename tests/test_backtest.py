@@ -9,7 +9,7 @@ from backtest import engine, metrics
 from backtest.engine import Trade, backtest_ticker
 from screener import rules
 from screener.params import Params
-from screener.result import DataQuality, ScreenResult, Signal
+from screener.result import DataQuality, MAStatus, ScreenResult, Signal
 
 
 def _ohlc(opens, highs, lows, closes) -> pd.DataFrame:
@@ -22,22 +22,25 @@ def _ohlc(opens, highs, lows, closes) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
-# Engine mechanics — scripted signals via monkeypatched evaluate.
+# Engine mechanics — scripted signals via monkeypatched evaluate (v2 exits).
 # --------------------------------------------------------------------------- #
-def _scripted(buy_at_bar, signal_map=None):
-    """Return a fake evaluate: BUY at ``buy_at_bar`` (stop 90/tp 110), else per map."""
-    signal_map = signal_map or {}
+def _scripted(buy_at_bar, break_bar=None, sell_bar=None):
+    """Fake evaluate: BUY at ``buy_at_bar``; MA50 'above' flips False from
+    ``break_bar`` on; SELL signal at ``sell_bar``."""
 
     def fake(ticker, df, quality=DataQuality.OK, scan_date=None, params=None,
              ma_cache=None):
         i = len(df) - 1
         r = ScreenResult(ticker=ticker, scan_date=str(df.index[-1].date()))
         r.quality = DataQuality.OK
-        r.ma = [object()]  # non-empty so is_tradeable logic is exercised
+        above = break_bar is None or i < break_bar
+        r.ma = [MAStatus(period=50, value=90.0, above=above, distance_pct=0.0)]
         if i == buy_at_bar:
-            r.signal, r.stop_loss, r.sell_at = Signal.BUY, 90, 110
+            r.signal = Signal.BUY
+        elif sell_bar is not None and i == sell_bar:
+            r.signal = Signal.SELL
         else:
-            r.signal = signal_map.get(i, Signal.HOLD)
+            r.signal = Signal.HOLD
         return r
 
     return fake
@@ -46,55 +49,53 @@ def _scripted(buy_at_bar, signal_map=None):
 P = Params(min_bars=5)
 
 
-def test_entry_next_open_and_tp_exit(monkeypatch):
-    monkeypatch.setattr(rules, "evaluate", _scripted(buy_at_bar=5))
+def test_entry_next_open_and_ma_exit(monkeypatch):
+    # BUY at bar 5 → enter at bar 6 open; MA50 breaks at bar 8 → exit at that
+    # day's close (v2: condition-based, not an intraday price touch).
+    monkeypatch.setattr(rules, "evaluate", _scripted(buy_at_bar=5, break_bar=8))
     n = 12
     opens = [100] * n
     highs = [105] * n
-    highs[8] = 111  # TP (110) touched on bar 8
     lows = [95] * n
     closes = [100] * n
+    closes[8] = 97
     trades = backtest_ticker("X", _ohlc(opens, highs, lows, closes), P)
 
     assert len(trades) == 1
     t = trades[0]
-    assert t.exit_reason == "tp"
+    assert t.exit_reason == "ma_exit"
     assert t.entry_price == 100  # open of bar 6 (t+1 after signal at bar 5)
-    assert t.exit_price == 110
-    assert t.holding_days == 2    # entered bar 6, exited bar 8
+    assert t.exit_price == 97    # the breaking close, NOT an intraday level
+    assert t.holding_days == 2   # entered bar 6, exited bar 8
 
 
-def test_stop_takes_priority_over_tp(monkeypatch):
+def test_intraday_dip_does_not_exit(monkeypatch):
+    # Lows pierce far below, but the close stays above MA50 → position rides
+    # to end of data (the old engine would have stopped out intraday).
     monkeypatch.setattr(rules, "evaluate", _scripted(buy_at_bar=5))
     n = 12
     opens = [100] * n
     highs = [105] * n
-    lows = [95] * n
-    # Bar 7: both stop (90) and TP (110) reachable → stop must win.
-    highs[7] = 120
-    lows[7] = 85
+    lows = [80] * n       # deep intraday dips every day
     closes = [100] * n
     trades = backtest_ticker("X", _ohlc(opens, highs, lows, closes), P)
 
     assert len(trades) == 1
-    assert trades[0].exit_reason == "stop"
-    assert trades[0].exit_price == 90
+    assert trades[0].exit_reason == "eod"
 
 
 def test_sell_signal_exit_at_close(monkeypatch):
-    monkeypatch.setattr(
-        rules, "evaluate", _scripted(buy_at_bar=5, signal_map={8: Signal.SELL})
-    )
+    monkeypatch.setattr(rules, "evaluate", _scripted(buy_at_bar=5, sell_bar=8))
     n = 12
     opens = [100] * n
-    highs = [105] * n     # never reaches TP
-    lows = [95] * n       # never reaches stop
+    highs = [105] * n
+    lows = [95] * n
     closes = [100] * n
     closes[8] = 103
     trades = backtest_ticker("X", _ohlc(opens, highs, lows, closes), P)
 
     assert len(trades) == 1
-    assert trades[0].exit_reason == "sell_signal"
+    assert trades[0].exit_reason == "ma_exit"
     assert trades[0].exit_price == 103
 
 
@@ -176,12 +177,31 @@ def test_downtrend_produces_no_trades():
     assert backtest_ticker("DOWN", df) == []
 
 
-def test_uptrend_produces_profitable_trades():
+def test_monotonic_uptrend_never_crosses_so_no_trades():
+    # cross_pure entries are events: a series that is above MA50 from the
+    # start never produces a fresh cross → no trades.
     n = 300
     closes = [1000 + i * 5 for i in range(n)]
-    highs = [c * 1.01 for c in closes]
-    lows = [c * 0.99 for c in closes]
-    df = _ohlc(closes, highs, lows, closes)
-    trades = backtest_ticker("UP", df)
+    df = _ohlc(closes, [c * 1.01 for c in closes], [c * 0.99 for c in closes],
+               closes)
+    assert backtest_ticker("UP", df) == []
+
+
+def test_dip_and_recover_produces_profitable_cross_trade():
+    # Uptrend → decline below MA50 → strong recovery: the recovery close
+    # crossing back above MA50 is the entry; the rally rides to end of data.
+    n = 380
+    closes = []
+    for i in range(n):
+        if i < 270:
+            closes.append(1000.0 + i)
+        elif i < 300:
+            closes.append(1269.0 - 8 * (i - 269))
+        else:
+            closes.append(1029.0 + 12 * (i - 299))
+    df = _ohlc(closes, [c * 1.01 for c in closes], [c * 0.99 for c in closes],
+               closes)
+    trades = backtest_ticker("DIPREC", df)
     assert len(trades) >= 1
+    assert trades[-1].exit_reason == "eod"       # rally never breaks MA50 again
     assert sum(t.net_return for t in trades) > 0

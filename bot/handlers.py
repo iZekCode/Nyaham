@@ -61,14 +61,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "<b>Commands</b>\n"
-        "• <b>/ma &lt;ticker&gt;</b> — MA stack, trend, entry/exit levels + chart\n"
-        "• <b>/top5</b> — 5 highest-confidence BUY candidates from the last scan\n\n"
-        "<b>How it screens</b> (6 MAs: 5/10/20/50/100/200)\n"
-        "1️⃣ Avoid stocks stretched too far above their MA\n"
-        "2️⃣ Prefer entries <i>near</i> an MA support\n"
-        "3️⃣ Above all 6 MAs = strongest\n"
-        "4️⃣ Sell when price loses an MA it had been holding\n"
-        "5️⃣ Avoid stocks below all MAs\n\n"
+        "• <b>/ma &lt;ticker&gt;</b> — MA stack, trend, trade plan + chart\n"
+        "• <b>/top5</b> — highest-confidence fresh breakouts from the last scan\n\n"
+        "<b>The strategy (cross_pure)</b>\n"
+        "🟢 <b>BUY</b> — a daily close crosses <i>above</i> MA50 (fresh breakout)\n"
+        "🔴 <b>SELL</b> — a daily close prints <i>below</i> MA50 (structure broke)\n"
+        "🚫 No profit target — winners ride until MA50 gives way\n"
+        "⚪ Everything else is HOLD/WAIT context, not a signal\n\n"
+        "The 6-MA stack (5/10/20/50/100/200), trend tiers, and volume are "
+        "shown as context.\n\n"
         f"<i>{fmt.DISCLAIMER}</i>",
         parse_mode=ParseMode.HTML,
     )

@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 from typing import Optional
 
+from config import EXIT_MA_PERIOD
 from screener.result import DataQuality, ScreenResult, Signal
 
 DISCLAIMER = "⚠️ Delayed data · informational only · not financial advice."
@@ -40,31 +41,34 @@ def _bottom_line(res: ScreenResult) -> str:
     """2–3 sentence actionable summary keyed off the signal."""
     if res.signal is Signal.BUY:
         return (
-            f"{res.ticker} is sitting near MA support with a bullish short-term "
-            f"stack — a valid entry zone around {rupiah(res.buy_at)}. "
-            f"Cut it if it closes below {rupiah(res.stop_loss)}."
+            f"{res.ticker} just broke out — today's close crossed above MA50. "
+            f"Trend entry at market ({rupiah(res.buy_at)}). No profit target: "
+            f"ride it and exit only if a daily close prints below "
+            f"{rupiah(res.stop_loss)} (MA50)."
         )
     if res.signal is Signal.SELL:
         return (
-            f"{res.ticker} just lost an MA it had been holding — momentum is "
-            f"turning. Consider trimming or exiting; don't add here."
+            f"{res.ticker} closed below its MA50 after holding above it — the "
+            f"structure broke. Under the exit rule this is a sell; don't add "
+            f"here."
         )
     if res.signal is Signal.AVOID:
-        if res.ma_above_count == 0:
-            return (
-                f"{res.ticker} is below every MA — a clear downtrend. "
-                f"Stay out until it reclaims some averages."
-            )
         return (
-            f"{res.ticker} is stretched too far above support — chasing here is "
-            f"poor risk/reward. Wait for a pullback toward "
-            f"{rupiah(res.buy_at)}."
+            f"{res.ticker} is below every MA — a clear downtrend. "
+            f"Stay out; the earliest signal to watch is a daily close back "
+            f"above MA50."
         )
-    # HOLD / WAIT
+    # HOLD — two flavors: in trend (above MA50) vs waiting for the trigger.
+    ma50 = next((m for m in res.ma if m.period == EXIT_MA_PERIOD), None)
+    if ma50 is not None and ma50.above:
+        return (
+            f"{res.ticker} is in an uptrend above MA50. If you hold it, stay "
+            f"in until a daily close below {rupiah(res.stop_loss)}. No new "
+            f"entry here — wait for the next fresh breakout."
+        )
     return (
-        f"{res.ticker} is in no-man's-land — not a clean entry yet. "
-        f"Watch for a dip toward {rupiah(res.buy_at)} support or a decisive "
-        f"push above resistance."
+        f"{res.ticker} is below MA50 — no position. The entry trigger is a "
+        f"daily close back above {rupiah(res.buy_at)}."
     )
 
 
@@ -109,11 +113,20 @@ def format_ma(res: ScreenResult) -> str:
         lines.append(f"🔢 Confidence: <b>{res.score:.0f}/100</b>")
     lines.append("")
 
-    # Entry & exit
-    lines.append("💵 <b>ENTRY &amp; EXIT</b>")
-    lines.append(f"   Buy at  : <b>{rupiah(res.buy_at)}</b>")
-    lines.append(f"   Sell/TP : <b>{rupiah(res.sell_at)}</b>")
-    lines.append(f"   Stop    : <b>{rupiah(res.stop_loss)}</b>")
+    # Trade plan (cross_pure: entries are breakout events; the exit is a
+    # condition, not a price target)
+    lines.append("💵 <b>TRADE PLAN</b>")
+    if res.signal is Signal.BUY:
+        entry_line = f"   Entry      : <b>{rupiah(res.buy_at)}</b> (breakout — at market)"
+    elif res.buy_at is not None:
+        entry_line = f"   Entry trig : daily close &gt; <b>{rupiah(res.buy_at)}</b> (MA50)"
+    else:
+        entry_line = "   Entry      : — (in trend; wait for the next fresh cross)"
+    lines.append(entry_line)
+    lines.append(f"   Resistance : {rupiah(res.sell_at)} <i>(info only)</i>")
+    lines.append(
+        f"   Exit       : daily close &lt; <b>{rupiah(res.stop_loss)}</b> (MA50)"
+    )
     lines.append("")
 
     # Volume
@@ -140,8 +153,8 @@ def format_ma_caption(res: ScreenResult) -> str:
     return (
         f"📊 <b>{t}</b>  💰 {rupiah(res.price)} {sign} {res.change_pct:+.2f}%\n"
         f"📈 Above {res.ma_summary} MAs  ·  🎯 {html.escape(res.verdict)}\n"
-        f"💵 Buy {rupiah(res.buy_at)} · TP {rupiah(res.sell_at)} · "
-        f"SL {rupiah(res.stop_loss)}\n"
+        f"💵 Buy {rupiah(res.buy_at)} · Res {rupiah(res.sell_at)} · "
+        f"Exit&lt;{rupiah(res.stop_loss)}\n"
         f"{reason}"
     )
 
@@ -162,8 +175,8 @@ def format_top5(rows: list, scan_date: str) -> str:
         lines.append(
             f"{medal} <b>{html.escape(r['ticker'])}</b>  "
             f"{rupiah(r['price'])}  ·  <b>{r['score']:.0f}/100</b>\n"
-            f"    💵 Buy {rupiah(r['buy_at'])} · TP {rupiah(r['sell_at'])} · "
-            f"SL {rupiah(r['stop_loss'])}\n"
+            f"    💵 Buy {rupiah(r['buy_at'])} · Res {rupiah(r['sell_at'])} · "
+            f"Exit&lt;{rupiah(r['stop_loss'])}\n"
             f"    <i>{html.escape(r['reason'] or '')}</i>"
         )
     lines.append(f"\n🕒 Scan: {html.escape(scan_date)}")

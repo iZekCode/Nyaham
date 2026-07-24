@@ -45,9 +45,9 @@ def render(res: ScreenResult) -> str:
     lines.append(f"Verdict {res.verdict}   (signal={res.signal.value}, score={res.score})")
     lines.append("")
     lines.append(
-        f"Buy @ {_fmt_price(res.buy_at)}   "
-        f"TP @ {_fmt_price(res.sell_at)}   "
-        f"SL @ {_fmt_price(res.stop_loss)}"
+        f"Entry {_fmt_price(res.buy_at)}   "
+        f"Resistance {_fmt_price(res.sell_at)} (info)   "
+        f"Exit: close < {_fmt_price(res.stop_loss)} (MA50)"
     )
     lines.append(
         f"Volume  buy {res.buy_pressure_pct:.0f}% / sell {res.sell_pressure_pct:.0f}%   "

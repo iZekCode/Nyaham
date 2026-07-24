@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from config import (
+    EXIT_MA_PERIOD,
     FAR_MA_THRESHOLD,
     MA_PERIODS,
     MIN_BARS,
@@ -28,6 +29,7 @@ class Params:
     far_ma_threshold: float = FAR_MA_THRESHOLD
     support_lookback: int = SUPPORT_LOOKBACK
     min_bars: int = MIN_BARS
+    exit_ma_period: int = EXIT_MA_PERIOD
     score_weights: dict[str, float] = field(
         default_factory=lambda: dict(SCORE_WEIGHTS)
     )

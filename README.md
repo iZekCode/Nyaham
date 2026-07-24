@@ -93,17 +93,28 @@ bot/
 tests/               MA math + rule-trigger + formatter scenarios
 ```
 
-### The 5 rules (source of truth: [plan.md §2](plan.md))
+### The strategy (cross_pure — replaced the original 5-rule logic)
 
-1. Avoid stocks far from their MA (overextended → `AVOID`).
-2. Enter stocks near an MA support (+ short-term bullish → `BUY`).
-3. Above all six MAs is the strongest state.
-4. Sell when a close breaks below an MA it had held ≥5 days (→ `SELL`).
-5. Avoid stocks below all MAs (→ `AVOID`).
+- **BUY** — a *fresh breakout*: today's daily close crossed **above MA50**
+  (yesterday's close was at/below it). Entries are events — a stock that
+  crossed weeks ago is "in trend", not a new BUY.
+- **SELL** — a fresh daily close **below MA50** after holding above it.
+  The exit is a *condition*, not a price target; there is **no take-profit**
+  (nearest resistance is shown as information only).
+- **AVOID** — below all six MAs (clear downtrend) or data-quality flags.
+- **HOLD** — everything else, with context: *in trend* (stay in if entered)
+  or *below MA50* (the entry trigger is a daily close back above it).
 
-Key thresholds (`NEAR_MA_THRESHOLD` 2%, `FAR_MA_THRESHOLD` 5%,
-`SUPPORT_LOOKBACK` 5 days, `MIN_BARS` 250) live in `config.py` and will be
-tuned by the Phase 4 backtest.
+The 6-MA stack, trend tiers, and volume metrics remain as displayed context.
+
+cross_pure emerged from the Phase 4 investigation as the only configuration
+with a consistent multi-decade profile (positive expectancy in 19 of 26 years
+on ~16,000 trades, controlled losses in crashes) — full story and the honest
+caveats (survivorship bias unresolved; not formally validated) in
+[backtest/FINDINGS.md](backtest/FINDINGS.md).
+
+Key parameters (`EXIT_MA_PERIOD` 50, `SUPPORT_LOOKBACK` 5 days,
+`MIN_BARS` 250) live in `config.py`.
 
 ## Backtest (Phase 4)
 

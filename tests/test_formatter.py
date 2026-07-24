@@ -60,8 +60,10 @@ def test_format_ma_contains_core_sections():
     assert "MA STACK: BBCA" in text
     assert "6.250" in text
     assert "Above <b>3/6</b>" in text
-    assert "ENTRY" in text
-    assert "6.225" in text  # buy
+    assert "TRADE PLAN" in text
+    assert "6.225" in text  # buy zone
+    assert "daily close" in text  # exit is a condition, not a price target
+    assert "info only" in text    # resistance is informational
     assert "Bottom line" in text
     assert fmt.DISCLAIMER in text
 
@@ -116,6 +118,7 @@ def test_bottom_line_varies_by_signal():
     buy = fmt.format_ma(_result(signal=Signal.BUY))
     sell = fmt.format_ma(_result(signal=Signal.SELL))
     avoid = fmt.format_ma(_result(signal=Signal.AVOID, ma_above_count=0))
-    assert "entry zone" in buy
-    assert "lost an MA" in sell
+    assert "broke out" in buy
+    assert "No profit target" in buy   # cross_pure: no TP by design
+    assert "closed below its MA50" in sell
     assert "below every MA" in avoid

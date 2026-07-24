@@ -384,3 +384,154 @@ not further exit engineering.
 python -m backtest.side_v3 --dev                                # grid, dev only
 python -m backtest.side_v3 --final ma100 jkse_ma200 momentum    # frozen one-shot
 ```
+
+---
+
+## Side experiment — MA50 breakout entry (user-proposed spec)
+
+Proposal: enter when the close crosses **above** MA50; stop on a daily close
+below MA50; TP at the nearest MA above, or exit on losing MA10. Tested with
+each exit component isolated ([side_breakout.py](side_breakout.py)) —
+full universe, 5y, windows split at 2024-07-24.
+
+| Variant | Window | Trades | Exp/trade | PF | Hold |
+|---|---|---|---|---|---|
+| **cross_pure** (entry + MA50 close-stop only) | early 21–24 | 2,527 | **+0.34%** | **1.13** | 12.1d |
+| | late 24–26 | 1,878 | **+0.99%** | **1.33** | 10.7d |
+| +tp_nearest | early / late | ~2,500 / ~1,900 | −0.14% / −0.53% | 0.92 / 0.76 | ~5d |
+| +ma10_trail | early / late | ~2,500 / ~1,900 | −0.53% / −0.30% | 0.75 / 0.87 | ~4d |
+| **full_spec (as proposed)** | early / late | ~2,500 / ~1,900 | −0.58% / −0.48% | **0.64 / 0.74** | ~2d |
+
+Benchmarks: equal-weight B&H +414% (early — survivorship-inflated) / +34% (late).
+
+### Conclusion
+
+- **The proposal as stated loses in both windows** — and each added exit
+  subtracts independently. The nearest-MA TP and the MA10 trail reproduce the
+  winner-cutting failure mode documented in the refinements experiment: holds
+  collapse from ~12 days to ~2.
+- **The stripped version is the most consistent result of the session**:
+  breakout-in / close-below-out on MA50, nothing else, is positive in BOTH
+  windows (PF 1.13 / 1.33) — including the earlier window where v2 was
+  breakeven and v3's fresh trades were negative.
+- Caveats: +0.34%/trade (early) is thin vs 0.4% round-trip fees; both windows
+  were reused this session; survivorship bias inflates the early window; the
+  strategy trails buy-and-hold in both windows. **Directional, not validated.**
+
+### Reproduce
+
+```bash
+python -m backtest.side_breakout --limit 200
+```
+
+---
+
+## cross_pure on maximum history (2000–2026) — strongest evidence yet
+
+The stripped breakout config (cross above MA50 in, daily close below MA50 out,
+nothing else) was run on **max available history**
+([side_cross_history.py](side_cross_history.py)): 111 tickers, earliest bars
+June 2000, ~16,000 trades. Entries before **2021-07-01** predate every window
+touched this session.
+
+| Era | Trades | Win% | Exp/trade | PF | Hold |
+|---|---|---|---|---|---|
+| **Unseen (2000 → mid-2021)** | 11,444 | 19.1% | **+2.85%** | **2.04** | 14.8d |
+| Seen (mid-2021 → 2026) | 4,687 | 17.3% | +0.71% | 1.25 | 11.8d |
+
+**Positive expectancy in 19 of 26 calendar years.** Losing years are exactly
+the regimes a long-only trend-follower should lose: 2008, 2013, 2015, 2018–19,
+2026 YTD — and losses stay controlled (2008: −2.25%/trade; the MA50 exit forces
+early evacuation in crashes). Big years are the big trends: 2003, 2009–2011,
+2020.
+
+### The unresolved confound
+
+Survivorship bias is severe at this depth: equal-weight B&H of the (current-
+constituent) universe shows +2,700% over the unseen era — today's members
+include yesterday's 100-baggers by construction, so the +2.85%/trade level is
+inflated by an unknowable amount. Partial offsets: IHSG itself returned +833%
+over the era (real market beta, not selection), and the year-by-year *shape*
+(where it wins, where and how it loses) is bias-resistant even if the level
+is not.
+
+### Status
+
+The most supported configuration of the session: a consistent 26-year
+behavioral profile with a fee margin wide enough to survive substantial
+bias-discounting. **Still not validated** — the remaining step is a
+point-in-time universe (historical LQ45/IDX80 membership from IDX archives)
+or prospective paper-trading via the bot's daily scans.
+
+### Reproduce
+
+```bash
+python -m backtest.side_cross_history --limit 200
+```
+
+---
+
+## Portfolio-level cross_pure — account numbers (sizing study)
+
+Same cross_pure signals, real portfolio model
+([side_cross_portfolio.py](side_cross_portfolio.py)): 10 slots × 10% of
+current equity, compounding, cash-constrained, fees, no ranking.
+111 tickers, max history (2000–2026), 3,563 trades, 89% average exposure.
+
+| Window | CAGR | MaxDD | IHSG CAGR |
+|---|---|---|---|
+| Full span | +20.0% | **−72.3%** | +9.1% |
+| Unseen (< mid-2021) | +21.9% | −72.3% | +11.2% |
+| Seen (mid-2021→) | +12.6% | **−47.2%** | +0.6% |
+
+### Read
+
+- **Return levels are survivorship-inflated** — the fingerprint years are
+  2012 (+121%) and 2013 (+151%, IHSG −1.7%): mid-caps that mooned and
+  *therefore* later joined today's indices. The least-biased figure is the
+  seen era: +12.6% CAGR vs IHSG +0.6%.
+- **The risk profile is the believable part**: −47% to −72% drawdowns at
+  10%-equity slots and ~89% exposure; consecutive losing years happen
+  (2018–19: −37.6%, −14.4%). Crash protection is consistent (2008: −21% vs
+  IHSG −50%).
+- **Sizing implication**: at full throttle this strategy's drawdowns are
+  brutal. For a ~20–25% max-DD budget, run ~⅓ of the exposure (or add the
+  v3-tested JKSE>MA200 regime gate, which cuts the losing years directly).
+- Note: none of the per-ticker backtests used account-level sizing (1 unit
+  per trade, additive); this study is the only source of real CAGR/DD
+  figures for cross_pure.
+
+### Reproduce
+
+```bash
+python -m backtest.side_cross_portfolio --limit 200
+```
+
+### Slot count / diversification (10×10% vs 100×1%)
+
+Same 100% max deployment, different granularity:
+
+| Metric | 10 slots × 10% | 100 slots × 1% |
+|---|---|---|
+| Full-span CAGR | +20.0% | +12.2% |
+| Full-span max DD | −72.3% | **−21.5%** |
+| Seen-era CAGR (least biased) | +12.6% | +8.2% |
+| Seen-era max DD | −47.2% | **−20.4%** |
+| Avg exposure | 89% | 46% |
+| Trades | 3,563 | 16,111 |
+| Return ÷ drawdown | ~0.28 | **~0.57** |
+
+- **More slots ≈ 2× better risk-adjusted return**: ~half the CAGR, ~⅓ the
+  drawdown. The 100-slot version beat IHSG by ~7.6%/yr (seen era) with ≤~21%
+  drawdown throughout.
+- **Why**: at 100 slots, exposure tracks market breadth automatically — few
+  names above MA50 in a bear market ⇒ mostly cash ⇒ self-hedging. 2008 cost
+  only −10.3% (vs −20.9% at 10 slots, IHSG −50%). The 10-slot book fills fast
+  and stays ~89% invested regardless of regime.
+- **Caveat**: the 10-slot result took only ~22% of signals, filled in
+  alphabetical order — a concentrated, biased subsample. The 100-slot version
+  takes essentially all signals and is the more faithful read of the raw edge.
+- **Operational cost**: 16,111 trades ≈ 620/yr holding ~46 names avg — an
+  automated strategy, impractical by hand.
+
+Run: `python -m backtest.side_cross_portfolio --limit 200 --slots 100`

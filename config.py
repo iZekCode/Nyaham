@@ -48,8 +48,13 @@ MA_COLORS: dict[int, str] = {
 # --------------------------------------------------------------------------- #
 NEAR_MA_THRESHOLD = 0.02   # 2%  — "near an MA" (rule 2)
 FAR_MA_THRESHOLD = 0.05    # 5%  — "far from MA" / overextended (rule 1)
-SUPPORT_LOOKBACK = 5       # trading days price must have held above an MA (rule 4)
+SUPPORT_LOOKBACK = 5       # trading days held above MA50 for a break to be "fresh"
 MIN_BARS = 250             # minimum history for a valid MA200
+
+# v2 exit framework (backtest/FINDINGS.md): the exit is a CONDITION, not a
+# price target — exit when a daily close prints below this MA. There is no
+# take-profit; the nearest resistance is shown as information only.
+EXIT_MA_PERIOD = 50
 
 # Data-quality / freshness
 STALE_BAR_MAX_DAYS = 7     # last bar older than this ⇒ suspended/illiquid
