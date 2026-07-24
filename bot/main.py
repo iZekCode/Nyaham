@@ -9,7 +9,8 @@ from __future__ import annotations
 import datetime as dt
 import html
 import logging
-import traceback
+import logging.handlers
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from telegram import Update
@@ -24,7 +25,10 @@ from telegram.ext import (
 from config import (
     ADMIN_CHAT_ID,
     BOT_TOKEN,
+    LOG_BACKUP_COUNT,
+    LOG_FILE,
     LOG_LEVEL,
+    LOG_MAX_BYTES,
     SCAN_HOUR,
     SCAN_MINUTE,
     TIMEZONE,
@@ -33,6 +37,27 @@ from bot import handlers
 from data import cache
 
 logger = logging.getLogger(__name__)
+
+
+def setup_logging() -> None:
+    """Console logging always; rotating file logging when LOG_FILE is set (§8.2)."""
+    handlers_: list[logging.Handler] = [logging.StreamHandler()]
+    if LOG_FILE:
+        Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
+        handlers_.append(
+            logging.handlers.RotatingFileHandler(
+                LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT,
+                encoding="utf-8",
+            )
+        )
+    logging.basicConfig(
+        level=LOG_LEVEL,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers_,
+    )
+    # yfinance / httpx are noisy at INFO; quiet them unless debugging.
+    for noisy in ("httpx", "httpcore", "yfinance", "apscheduler.scheduler"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -67,8 +92,22 @@ async def _daily_scan_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=summary.as_text())
 
 
+async def _on_startup(app: Application) -> None:
+    """Heartbeat: tell the admin the bot is up (§8.2 monitoring)."""
+    if not ADMIN_CHAT_ID:
+        return
+    next_scan = f"{SCAN_HOUR:02d}:{SCAN_MINUTE:02d} {TIMEZONE}"
+    try:
+        await app.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=f"🤖 Bot started · daily scan scheduled for {next_scan}.",
+        )
+    except Exception:  # noqa: BLE001 — startup ping must never crash boot
+        logger.warning("Could not send startup heartbeat to admin")
+
+
 def build_application() -> Application:
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(_on_startup).build()
 
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("help", handlers.help_cmd))
@@ -89,9 +128,7 @@ def build_application() -> Application:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    setup_logging()
     if not BOT_TOKEN:
         raise SystemExit(
             "BOT_TOKEN is not set. Copy .env.example to .env and add your token."

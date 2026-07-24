@@ -24,6 +24,11 @@ backtest/output/
 *.png
 !docs/**/*.png
 
+# Runtime logs & backups (Phase 5 ops)
+logs/
+backups/
+*.log
+
 # Tooling
 .pytest_cache/
 .mypy_cache/

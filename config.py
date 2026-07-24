@@ -28,6 +28,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0") or "0")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+# Logging (§8.2): empty LOG_FILE ⇒ console only; set a path for rotating logs.
+LOG_FILE = os.getenv("LOG_FILE", "")
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(5_000_000)))
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
+
 # --------------------------------------------------------------------------- #
 # Indicators — the MA stack (source of truth, rule set §2)
 # --------------------------------------------------------------------------- #

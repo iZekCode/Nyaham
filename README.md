@@ -14,8 +14,8 @@ serves the results over Telegram. See [plan.md](plan.md) for the full design.
 | **1** | Screener core (universe, fetcher, indicators, rules, scoring, chart) + tests | ✅ Done |
 | **2** | Telegram bot (PTB): `/ma`, `/top5`, `/help`, `/start`, `/scan` + formatter | ✅ Done |
 | **3** | Scheduled daily scan + SQLite scan cache + OHLCV bar cache + trading calendar | ✅ Done |
-| **4** | Backtest engine + metrics + grid-search tuner | ✅ Built — ⚠️ strategy underperforms (see below) |
-| 5 | Deployment + ops | — |
+| **4** | Backtest engine + metrics + grid-search tuner + extensive strategy research | ✅ Done — see [FINDINGS.md](backtest/FINDINGS.md) |
+| **5** | Deployment + ops (Docker, systemd, logging, backups, runbook) | ✅ Done — see [DEPLOY.md](DEPLOY.md) |
 
 ## Setup
 
@@ -61,10 +61,23 @@ pytest -q
 python -m bot.main
 ```
 
-Commands: `/start`, `/help`, `/ma <ticker>`, `/top5`, and `/scan` (admin only —
-runs a full-universe scan and populates the cache that `/top5` reads).
-`/top5` never scans live; it serves the most recent completed scan. A daily
-scan job is registered for 16:30 WIB (Asia/Jakarta), skipping weekends/holidays.
+Commands: `/start`, `/help`, `/ma <ticker> [conservative]`, `/top5
+[conservative]`, and `/scan` (admin only — runs a full-universe scan and
+populates the cache that `/top5` reads). `/top5` never scans live; it serves
+the most recent completed scan. A daily scan job is registered for 16:30 WIB
+(Asia/Jakarta), skipping weekends/holidays.
+
+## Deploying (Phase 5)
+
+For 24/7 hosting, use Docker (recommended) or systemd — both auto-restart:
+
+```bash
+cp .env.example .env    # set BOT_TOKEN + ADMIN_CHAT_ID
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+Full hosting guide, secrets/token rotation, logging, backups, and the
+maintenance runbook (universe/holiday updates) are in [DEPLOY.md](DEPLOY.md).
 
 ## Architecture
 

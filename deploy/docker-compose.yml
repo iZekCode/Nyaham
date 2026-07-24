@@ -1,0 +1,25 @@
+# Deploy the bot with:  docker compose -f deploy/docker-compose.yml up -d --build
+# Run from the repo root so the build context (.) is the project.
+services:
+  bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ihsg-skem-bot:latest
+    container_name: ihsg-skem-bot
+    restart: unless-stopped        # auto-restart on crash / reboot (§8.2)
+    env_file:
+      - ../.env                    # BOT_TOKEN, ADMIN_CHAT_ID (never committed)
+    environment:
+      TZ: Asia/Jakarta
+    volumes:
+      - ../data:/app/data          # SQLite cache persists across restarts
+      - ../logs:/app/logs          # rotating logs on the host
+    # A single polling instance only — never scale >1 (Telegram 409 Conflict).
+    deploy:
+      replicas: 1
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

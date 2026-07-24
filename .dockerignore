@@ -1,0 +1,18 @@
+# Never ship these into the image.
+.env
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+data/*.sqlite
+data/cache.sqlite
+logs
+backups
+backtest/output
+*.png
+!docs/**/*.png
+.DS_Store
