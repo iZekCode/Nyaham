@@ -26,12 +26,26 @@ from __future__ import annotations
 import argparse
 import logging
 from math import isnan
+from typing import Optional
 
 import pandas as pd
 
 from backtest.engine import _net_return
 from config import FEE_BUY, FEE_SELL, LOG_LEVEL
 from universe import UNIVERSE
+
+REGIME_MA = 200  # ^JKSE > its own MA200 = risk-on (v3 gate / conservative mode)
+
+
+def build_regime(jkse: Optional[pd.DataFrame], calendar: list) -> Optional[dict]:
+    """Per-date risk-on flag: ^JKSE close above its MA200, forward-filled onto
+    the trade calendar. Returns None if the index is unavailable."""
+    if jkse is None or jkse.empty:
+        return None
+    c = jkse["Close"].dropna()
+    ma = c.rolling(REGIME_MA, min_periods=REGIME_MA).mean()
+    flag = (c > ma).reindex(pd.DatetimeIndex(calendar)).ffill().fillna(False)
+    return {d: bool(v) for d, v in flag.items()}
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +75,10 @@ def prep(df: pd.DataFrame):
     }
 
 
-def simulate(prepped: dict) -> tuple[pd.Series, list[dict], pd.Series]:
+def simulate(prepped: dict, regime: Optional[dict] = None
+             ) -> tuple[pd.Series, list[dict], pd.Series]:
+    """``regime`` (optional) gates NEW entries: only open positions on a date
+    where regime[d] is True (conservative mode). Exits are never gated."""
     calendar = sorted({d for p in prepped.values() for d in p["dates"]})
     positions: dict[str, dict] = {}
     last_close: dict[str, float] = {}
@@ -70,6 +87,7 @@ def simulate(prepped: dict) -> tuple[pd.Series, list[dict], pd.Series]:
     eq_vals, exp_vals = [], []
 
     for d in calendar:
+        regime_ok = True if regime is None else bool(regime.get(d, False))
         # exits
         for t in list(positions):
             p = prepped[t]
@@ -92,9 +110,9 @@ def simulate(prepped: dict) -> tuple[pd.Series, list[dict], pd.Series]:
                        for t, pos in positions.items())
         mark = cash + invested
 
-        # entries (decision at close d, fill next open)
+        # entries (decision at close d, fill next open) — gated by regime
         slots = MAX_POS - len(positions)
-        if slots > 0:
+        if slots > 0 and regime_ok:
             for t, p in prepped.items():
                 if slots == 0:
                     break
@@ -148,10 +166,13 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=200)
     parser.add_argument("--slots", type=int, default=10,
                         help="max concurrent positions (each ~1/slots of equity)")
+    parser.add_argument("--regime-ma", type=int, default=200,
+                        help="^JKSE MA period for the conservative-mode gate")
     args = parser.parse_args()
 
-    global MAX_POS
+    global MAX_POS, REGIME_MA
     MAX_POS = args.slots
+    REGIME_MA = args.regime_ma
     logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s %(name)s: %(message)s")
 
     from backtest.__main__ import load_data, load_index
@@ -168,54 +189,69 @@ def main() -> None:
         print("No data.")
         return
 
-    eq, trades, exposure = simulate(prepped)
     idxdf = load_index("^JKSE", "max")
     jkse = idxdf["Close"].dropna() if idxdf is not None else None
 
-    wins = sum(1 for t in trades if t["net"] > 0)
-    print("\n" + "=" * 78)
-    print(f"PORTFOLIO cross_pure — {len(prepped)} tickers · {MAX_POS} slots · "
-          f"10% equity/position · fees {FEE_BUY + FEE_SELL:.2%} r/t")
-    print(f"Span {eq.index[0].date()} → {eq.index[-1].date()} · "
-          f"{len(trades)} trades · win {wins / max(len(trades), 1) * 100:.1f}% · "
-          f"avg exposure {exposure.mean() * 100:.0f}%")
-    print("=" * 78)
-    for label, lo, hi in (("FULL SPAN", None, None),
-                          ("UNSEEN (<2021-07)", None, SEEN_START),
-                          ("SEEN (2021-07→)", SEEN_START, None)):
-        s = window_stats(eq, lo, hi)
-        if not s:
-            continue
-        line = (f"{label:<19} return {s['ret'] * 100:+10.1f}%   "
-                f"CAGR {s['cagr'] * 100:+6.1f}%   maxDD {s['dd'] * 100:6.1f}%")
-        if jkse is not None:
-            j = jkse
-            if lo:
-                j = j[j.index >= lo]
-            if hi:
-                j = j[j.index < hi]
-            if len(j) >= 2:
-                jret = float(j.iloc[-1] / j.iloc[0] - 1.0)
-                jcagr = (1.0 + jret) ** (1.0 / s["years"]) - 1.0
-                line += f"   | IHSG CAGR {jcagr * 100:+5.1f}%"
-        print(line)
+    calendar = sorted({d for p in prepped.values() for d in p["dates"]})
+    regime = build_regime(idxdf, calendar)
+    if regime is None:
+        print("No ^JKSE data — cannot build the regime gate.")
+        return
 
-    print("-" * 78)
-    print(f"{'year':<6} {'portfolio':>10} {'IHSG':>8}")
-    yearly = eq.resample("YE").last()
-    prev = eq.iloc[0]
-    for ts, v in yearly.items():
+    # normal = no gate; conservative = only enter when ^JKSE > its MA200.
+    runs = {
+        "NORMAL (no gate)": simulate(prepped),
+        "CONSERVATIVE (JKSE>MA200 gate)": simulate(prepped, regime),
+    }
+
+    print("\n" + "=" * 82)
+    print(f"cross_pure — NORMAL vs CONSERVATIVE — {len(prepped)} tickers · "
+          f"{MAX_POS} slots · fees {FEE_BUY + FEE_SELL:.2%} r/t")
+    print(f"Conservative = new entries only when ^JKSE > its MA{REGIME_MA}")
+    print("=" * 82)
+
+    for label, (eq, trades, exposure) in runs.items():
+        wins = sum(1 for t in trades if t["net"] > 0)
+        print(f"\n### {label}")
+        print(f"    {len(trades)} trades · win {wins / max(len(trades), 1) * 100:.1f}% "
+              f"· avg exposure {exposure.mean() * 100:.0f}%")
+        for wlabel, lo, hi in (("FULL SPAN", None, None),
+                               ("UNSEEN (<2021-07)", None, SEEN_START),
+                               ("SEEN (2021-07→)", SEEN_START, None)):
+            s = window_stats(eq, lo, hi)
+            if not s:
+                continue
+            line = (f"    {wlabel:<19} CAGR {s['cagr'] * 100:+6.1f}%   "
+                    f"maxDD {s['dd'] * 100:6.1f}%   "
+                    f"ret÷DD {abs(s['cagr'] / s['dd']) if s['dd'] else 0:.2f}")
+            if jkse is not None:
+                j = jkse
+                if lo:
+                    j = j[j.index >= lo]
+                if hi:
+                    j = j[j.index < hi]
+                if len(j) >= 2:
+                    jcagr = ((j.iloc[-1] / j.iloc[0]) ** (1.0 / s["years"])) - 1.0
+                    line += f"   | IHSG CAGR {jcagr * 100:+5.1f}%"
+            print(line)
+
+    print("\n" + "-" * 82)
+    print(f"{'year':<6} {'NORMAL':>9} {'CONSERV':>9} {'IHSG':>9}")
+    ny = runs["NORMAL (no gate)"][0].resample("YE").last()
+    cy = runs["CONSERVATIVE (JKSE>MA200 gate)"][0].resample("YE").last()
+    np_, cp = runs["NORMAL (no gate)"][0].iloc[0], runs["CONSERVATIVE (JKSE>MA200 gate)"][0].iloc[0]
+    for ts in ny.index:
         y = ts.year
-        ret = v / prev - 1.0
-        prev = v
+        nr, np_ = ny[ts] / np_ - 1.0, ny[ts]
+        cr, cp = cy[ts] / cp - 1.0, cy[ts]
         jr = ""
         if jkse is not None:
             jy = jkse[jkse.index.year == y]
             if len(jy) >= 2:
-                jr = f"{(jy.iloc[-1] / jy.iloc[0] - 1) * 100:+7.1f}%"
-        print(f"{y:<6} {ret * 100:>+9.1f}% {jr:>8}")
-    print("-" * 78)
-    print("⚠️ Survivorship bias (current constituents, 25y back) inflates this.")
+                jr = f"{(jy.iloc[-1] / jy.iloc[0] - 1) * 100:+8.1f}%"
+        print(f"{y:<6} {nr * 100:>+8.1f}% {cr * 100:>+8.1f}% {jr:>9}")
+    print("-" * 82)
+    print("⚠️ Survivorship bias (current constituents, 25y back) inflates levels.")
 
 
 if __name__ == "__main__":

@@ -535,3 +535,119 @@ Same 100% max deployment, different granularity:
   automated strategy, impractical by hand.
 
 Run: `python -m backtest.side_cross_portfolio --limit 200 --slots 100`
+
+---
+
+## Partial scale-out vs pure trailing (the "capture more profit" question)
+
+Tested whether selling a fraction at a fixed target (locking in some gain near
+a high) while trailing the rest on MA50 beats pure trailing
+([side_scaleout.py](side_scaleout.py)). Because the MA50 exit timing is
+identical across variants, each trade's peak (MFE) is the same — so
+"peak captured" (exp ÷ avg MFE) is directly comparable. 108 tickers, max
+history, 15,514 entries.
+
+**Full span:**
+
+| Variant | Exp/trade | PF | Std | Peak captured | Exp÷Std |
+|---|---|---|---|---|---|
+| **pure** | **+2.21%** | **1.80** | 40.5 | **18.5%** | 0.055 |
+| sell ⅓ @ +25% | +1.52% | 1.56 | 28.2 | 12.7% | 0.054 |
+| sell ⅓ @ +15% | +1.40% | 1.52 | 27.8 | 11.7% | 0.050 |
+| sell ½ @ +20% | +1.10% | 1.41 | 22.0 | 9.2% | 0.050 |
+| sell ⅓@15 & ⅓@30 | +0.76% | 1.28 | 16.3 | 6.4% | 0.047 |
+
+Seen era (least biased): pure +0.76%/PF 1.27; every scale-out worse, the
+aggressive one collapses to +0.04%/trade (breakeven). Seen-era Exp÷Std roughly
+halves under scale-out (0.034 → 0.024).
+
+### Conclusion — no take-profit, in any form
+
+This is the **fourth** profit-taking mechanism rejected this session (resistance
+TP, MA10 fast-trail, and now partial scale-out at 3 target/fraction combos).
+The pattern is consistent and now conclusive:
+
+- Every scale-out lowers expectancy and PF.
+- **Peak-capture goes DOWN, not up** (18.5% → 6–13%): a fixed target is a
+  ceiling far below where the monster winners top (+40–100%), so it caps
+  exactly the fat tail that carries the strategy. The intuition "we don't exit
+  at the max" is real, but a target makes max-capture *worse*.
+- Risk-adjusted it is a wash at best (full span) and clearly negative in the
+  least-biased seen era.
+- Scale-out's only deliverable is lower volatility — obtained far more
+  efficiently via diversification (100-slot sizing cut drawdown to ⅓ without
+  capping winners or adding sell-leg fees).
+
+**There is no TP to "get right."** Not exiting at the top is the intrinsic cost
+of trend-following; the correct lever for that discomfort is position sizing /
+diversification, not a profit target.
+
+Run: `python -m backtest.side_scaleout --limit 200`
+
+---
+
+## Waitlisted feature — Conservative mode (regime gate) backtest
+
+Tested the planned "conservative" mode: cross_pure with new entries gated to
+risk-on regimes only (^JKSE > its own MA200); exits never gated. Portfolio sim,
+100 slots × 1%, 111 tickers, 26 years
+([side_cross_portfolio.py](side_cross_portfolio.py), now runs both modes).
+
+| Metric | NORMAL | CONSERVATIVE |
+|---|---|---|
+| Full-span CAGR | +12.2% | +9.0% |
+| Full-span max DD | −21.5% | **−14.7%** |
+| Seen-era CAGR (least biased) | +8.2% | +7.9% |
+| Seen-era max DD | −20.4% | **−13.7%** |
+| Seen-era return÷DD | 0.40 | **0.58** |
+| Avg exposure | 46% | 33% |
+| Trades | 16,116 | 11,225 |
+
+### Verdict — worth building
+
+**The first refinement this session that improves risk-adjusted return on the
+least-biased data** (not just a slide along the risk/return line). In the seen
+era the gate keeps ~96% of the return while cutting drawdown by a third —
+return÷DD 0.40 → 0.58. It earns this in exactly the ugly years by sitting in
+cash during broad bear markets: 2008 −10.3%→−7.3%, 2015 −12.5%→−4.9%,
+2018 −2.5%→**+8.9%**, 2026 YTD −13.8%→−4.9%.
+
+**Cost (recovery lag)**: the slow MA200 gate misses V-shaped bottoms — 2009
++56%→+5.5%, 2020 +43.5%→+13.7% — because ^JKSE hadn't reclaimed MA200 during
+the snap-back. Clean trade: give up sharp recoveries to avoid grinding bears.
+
+Recommendation: offer conservative as designed; it's the right default for
+anyone whose binding constraint is drawdown tolerance (most people, at a ~19%
+win rate). Normal mode for maximum participation.
+
+Run: `python -m backtest.side_cross_portfolio --limit 200 --slots 100`
+
+### Regime gate period: MA50 beats MA200 (update)
+
+Re-ran the conservative gate with ^JKSE > its MA**50** instead of MA200
+(100 slots, full universe, 26yr):
+
+| Metric (seen era, least biased) | NORMAL | MA200 gate | **MA50 gate** |
+|---|---|---|---|
+| CAGR | +8.2% | +7.9% | **+10.9%** |
+| Max DD | −20.4% | −13.7% | **−12.6%** |
+| return÷DD | 0.40 | 0.58 | **0.87** |
+
+**MA50 is a Pareto improvement over doing nothing** — higher return *and* lower
+drawdown in the seen era (the MA200 gate only bought lower DD at a return cost).
+Mechanism = the recovery-lag fix: MA50 reclaims fast after a bottom, so it
+caught 2009 (+49% vs MA200 gate's +5.5%) and 2020 (+25.6% vs +13.7%) while
+keeping bear protection just as good (2008 −6.6%, 2018 +9.3%, 2026 −4.5%).
+Win rate even ticked up (18.6%→19.2%): the faster gate filtered bad entries
+without net whipsaw.
+
+**Snooping caveat**: two gate periods were compared and the better chosen after
+the fact — mild curve-fitting. Kept honest by (a) MA50 being economically
+coherent (faster gate ⇒ less lag, predicted in advance) and (b) it winning on
+the least-biased seen era by the widest margin. Do NOT fine-tune further
+(MA40/MA60 would be curve-fitting); if formalized, lock the period on pre-2021
+data and confirm once.
+
+**Recommendation update: conservative mode should use the MA50 gate, not MA200.**
+
+Run: `python -m backtest.side_cross_portfolio --limit 200 --slots 100 --regime-ma 50`
