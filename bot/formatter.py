@@ -39,6 +39,12 @@ def _quality_note(res: ScreenResult) -> Optional[str]:
 
 def _bottom_line(res: ScreenResult) -> str:
     """2–3 sentence actionable summary keyed off the signal."""
+    if res.regime_gated:
+        return (
+            f"{res.ticker} broke out above MA50 — but the market itself is "
+            f"risk-off, so conservative mode stays out. Revisit when the index "
+            f"turns risk-on (or use normal mode to take it anyway)."
+        )
     if res.signal is Signal.BUY:
         return (
             f"{res.ticker} just broke out — today's close crossed above MA50. "
@@ -116,7 +122,9 @@ def format_ma(res: ScreenResult) -> str:
     # Trade plan (cross_pure: entries are breakout events; the exit is a
     # condition, not a price target)
     lines.append("💵 <b>TRADE PLAN</b>")
-    if res.signal is Signal.BUY:
+    if res.regime_gated:
+        entry_line = "   Entry      : 🛡 gated — breakout, but market risk-off"
+    elif res.signal is Signal.BUY:
         entry_line = f"   Entry      : <b>{rupiah(res.buy_at)}</b> (breakout — at market)"
     elif res.buy_at is not None:
         entry_line = f"   Entry trig : daily close &gt; <b>{rupiah(res.buy_at)}</b> (MA50)"

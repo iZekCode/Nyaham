@@ -64,12 +64,25 @@ def render(res: ScreenResult) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="IHSG MA screener — CLI")
     parser.add_argument("tickers", nargs="+", help="IDX board codes, e.g. BBCA ARCI")
+    parser.add_argument("--conservative", "-c", action="store_true",
+                        help="gate BUYs on the market regime (IHSG > its MA50)")
     args = parser.parse_args()
 
     logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s %(name)s: %(message)s")
 
+    regime_ok = None
+    if args.conservative:
+        from screener.regime import get_regime_state
+
+        regime = get_regime_state()
+        if regime is not None:
+            regime_ok = regime.ok
+            print(f"[conservative] {regime.summary}\n")
+        else:
+            print("[conservative] regime unavailable — falling back to normal\n")
+
     for i, t in enumerate(args.tickers):
-        res = screen_ticker(t)
+        res = screen_ticker(t, regime_ok=regime_ok)
         print(render(res))
         if i < len(args.tickers) - 1:
             print()

@@ -38,6 +38,7 @@ class ScanSummary:
     by_signal: dict[str, int] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
+    regime_note: str = ""
 
     def as_text(self) -> str:
         sig = "  ".join(f"{k}:{v}" for k, v in sorted(self.by_signal.items()))
@@ -45,6 +46,8 @@ class ScanSummary:
             f"✅ Scan {self.scan_date}: {self.ok}/{self.total} OK "
             f"in {self.elapsed_s:.0f}s\n{sig or '(no signals)'}"
         )
+        if self.regime_note:
+            line += f"\n🛡 Regime: {self.regime_note}"
         if self.failures:
             shown = ", ".join(self.failures[:8])
             more = "" if len(self.failures) <= 8 else f" +{len(self.failures) - 8} more"
@@ -95,6 +98,22 @@ def run_scan(
 
     cache.init_db()
     cache.save_results(results)
+
+    # Capture the market regime once so conservative /top5 is served from the
+    # same scan (conservative mode gates BUYs when the index is risk-off).
+    try:
+        from screener.regime import get_regime_state
+
+        regime = get_regime_state()
+        if regime is not None:
+            summary.regime_note = regime.summary
+            cache.save_scan_meta(
+                summary.scan_date, regime.ok, regime.symbol,
+                regime.ma_period, regime.summary,
+            )
+    except Exception as exc:  # noqa: BLE001 — regime is optional metadata
+        logger.warning("Regime capture failed: %s", exc)
+
     summary.elapsed_s = time.monotonic() - start
     logger.info("Scan complete: %s", summary.as_text().replace("\n", " | "))
     return summary

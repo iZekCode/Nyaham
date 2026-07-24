@@ -51,6 +51,15 @@ CREATE TABLE IF NOT EXISTS ohlcv (
     volume  REAL,
     PRIMARY KEY (ticker, date)
 );
+
+CREATE TABLE IF NOT EXISTS scan_meta (
+    scan_date     TEXT PRIMARY KEY,
+    regime_ok     INTEGER,        -- 1 risk-on, 0 risk-off, NULL unknown
+    regime_index  TEXT,
+    regime_ma     INTEGER,
+    regime_note   TEXT,
+    created_at    TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -145,6 +154,43 @@ def get_top_buys(limit: int = 5, scan_date: Optional[str] = None) -> list[sqlite
             (date, Signal.BUY.value, limit),
         ).fetchall()
     return list(rows)
+
+
+# --------------------------------------------------------------------------- #
+# Scan metadata — the market regime state captured at scan time, so
+# conservative /top5 can be served from the same scan (conservative mode).
+# --------------------------------------------------------------------------- #
+def save_scan_meta(
+    scan_date: str,
+    regime_ok: Optional[bool],
+    regime_index: Optional[str] = None,
+    regime_ma: Optional[int] = None,
+    regime_note: Optional[str] = None,
+) -> None:
+    ok = None if regime_ok is None else (1 if regime_ok else 0)
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO scan_meta
+                (scan_date, regime_ok, regime_index, regime_ma, regime_note)
+            VALUES (?,?,?,?,?)
+            ON CONFLICT(scan_date) DO UPDATE SET
+                regime_ok=excluded.regime_ok, regime_index=excluded.regime_index,
+                regime_ma=excluded.regime_ma, regime_note=excluded.regime_note
+            """,
+            (scan_date, ok, regime_index, regime_ma, regime_note),
+        )
+
+
+def get_scan_meta(scan_date: Optional[str] = None) -> Optional[sqlite3.Row]:
+    """Regime metadata for a scan date (defaults to the latest scan)."""
+    date = scan_date or latest_scan_date()
+    if not date:
+        return None
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT * FROM scan_meta WHERE scan_date = ?", (date,)
+        ).fetchone()
 
 
 # --------------------------------------------------------------------------- #

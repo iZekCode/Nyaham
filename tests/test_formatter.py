@@ -122,3 +122,11 @@ def test_bottom_line_varies_by_signal():
     assert "No profit target" in buy   # cross_pure: no TP by design
     assert "closed below its MA50" in sell
     assert "below every MA" in avoid
+
+
+def test_gated_breakout_renders_conservative_message():
+    # A regime-gated breakout (HOLD + regime_gated flag) reads as gated, not
+    # as a normal entry.
+    text = fmt.format_ma(_result(signal=Signal.HOLD, regime_gated=True))
+    assert "gated" in text
+    assert "risk-off" in text

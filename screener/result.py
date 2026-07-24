@@ -87,6 +87,7 @@ class ScreenResult:
     signal: Signal = Signal.HOLD
     verdict: str = ""               # e.g. "🟢 FULL BULLISH"
     reasons: list[str] = field(default_factory=list)
+    regime_gated: bool = False      # conservative mode suppressed a fresh BUY
 
     # Confidence
     score: float = 0.0              # 0..100

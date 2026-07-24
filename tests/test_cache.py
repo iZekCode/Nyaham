@@ -102,3 +102,30 @@ def test_ohlcv_upsert_no_duplicates():
     cache.save_ohlcv("AAA", df)
     cache.save_ohlcv("AAA", df)  # same dates again
     assert len(cache.load_ohlcv("AAA")) == 3
+
+
+# --------------------------------------------------------------------------- #
+# Scan metadata (regime state — conservative mode)
+# --------------------------------------------------------------------------- #
+def test_scan_meta_roundtrip():
+    cache.save_scan_meta("2026-07-24", True, "^JKSE", 50, "^JKSE risk-on")
+    row = cache.get_scan_meta("2026-07-24")
+    assert row is not None
+    assert row["regime_ok"] == 1
+    assert row["regime_index"] == "^JKSE"
+    assert row["regime_ma"] == 50
+
+
+def test_scan_meta_risk_off_is_zero():
+    cache.save_scan_meta("2026-07-24", False)
+    assert cache.get_scan_meta("2026-07-24")["regime_ok"] == 0
+
+
+def test_scan_meta_missing_is_none():
+    assert cache.get_scan_meta("1999-01-01") is None
+
+
+def test_scan_meta_upsert():
+    cache.save_scan_meta("2026-07-24", False)
+    cache.save_scan_meta("2026-07-24", True, "^JKSE", 50)
+    assert cache.get_scan_meta("2026-07-24")["regime_ok"] == 1

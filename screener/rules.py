@@ -24,6 +24,7 @@ from typing import Optional
 
 import pandas as pd
 
+from config import REGIME_INDEX_SYMBOL, REGIME_MA_PERIOD
 from screener import indicators as ind
 from screener.params import DEFAULT_PARAMS, Params
 from screener.result import (
@@ -186,12 +187,17 @@ def evaluate(
     scan_date: Optional[str] = None,
     params: Optional[Params] = None,
     ma_cache: Optional[dict] = None,
+    regime_ok: Optional[bool] = None,
 ) -> ScreenResult:
     """Evaluate one ticker's DataFrame into a full ``ScreenResult``.
 
     ``ma_cache`` (optional) is a {period: MA-series} map aligned to ``df``; the
     backtester passes it so MAs aren't recomputed on every bar. Live callers
     omit it and MAs are computed from ``df`` as usual.
+
+    ``regime_ok`` selects the mode: ``None`` = normal (no gate); ``True``/
+    ``False`` = conservative mode with the current market regime — a fresh BUY
+    is suppressed to HOLD when the market is risk-off (``False``).
     """
     params = params or DEFAULT_PARAMS
     date_str = scan_date or (str(df.index[-1].date()) if len(df) else "")
@@ -298,6 +304,21 @@ def evaluate(
     if res.ma_above_count == total and total > 0:
         res.reasons.append("Full bullish stack — price above all MAs.")
 
+    # Conservative-mode regime gate: a fresh breakout is only actionable when
+    # the market itself is risk-on. regime_ok is None ⇒ normal mode (no gate).
+    gated = regime_ok is False and signal is Signal.BUY
+    res.regime_gated = gated
+    if gated:
+        signal = Signal.HOLD
+        res.reasons.append(
+            f"Conservative gate: market is risk-off ({REGIME_INDEX_SYMBOL} "
+            f"below MA{REGIME_MA_PERIOD}) — breakout not actionable; wait for "
+            f"the index to turn risk-on."
+        )
+
     res.signal = signal
-    res.verdict = _verdict(signal, res.ma_above_count, total)
+    res.verdict = (
+        "🛡 WAIT — breakout gated (market risk-off)"
+        if gated else _verdict(signal, res.ma_above_count, total)
+    )
     return res

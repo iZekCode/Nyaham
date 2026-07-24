@@ -107,14 +107,23 @@ tests/               MA math + rule-trigger + formatter scenarios
 
 The 6-MA stack, trend tiers, and volume metrics remain as displayed context.
 
+**Modes** — both `/ma` and `/top5` take an optional `conservative` (or `c`):
+
+- **normal** (default) — every fresh breakout.
+- **conservative** — only signals BUY when the market itself is risk-on
+  (IHSG `^JKSE` above its own MA50). In backtests this kept ~most of the return
+  while cutting max drawdown sharply (a Pareto improvement on the least-biased
+  data). When the market is risk-off, conservative `/top5` recommends holding
+  cash. Exits are never gated.
+
 cross_pure emerged from the Phase 4 investigation as the only configuration
 with a consistent multi-decade profile (positive expectancy in 19 of 26 years
 on ~16,000 trades, controlled losses in crashes) — full story and the honest
 caveats (survivorship bias unresolved; not formally validated) in
 [backtest/FINDINGS.md](backtest/FINDINGS.md).
 
-Key parameters (`EXIT_MA_PERIOD` 50, `SUPPORT_LOOKBACK` 5 days,
-`MIN_BARS` 250) live in `config.py`.
+Key parameters (`EXIT_MA_PERIOD` 50, `REGIME_MA_PERIOD` 50, `SUPPORT_LOOKBACK`
+5 days, `MIN_BARS` 250) live in `config.py`.
 
 ## Backtest (Phase 4)
 

@@ -56,6 +56,13 @@ MIN_BARS = 250             # minimum history for a valid MA200
 # take-profit; the nearest resistance is shown as information only.
 EXIT_MA_PERIOD = 50
 
+# Conservative-mode regime gate (backtest/FINDINGS.md "Regime gate period"):
+# only allow BUY signals when the market index closes above its own MA. MA50
+# beat MA200 on the least-biased data (Pareto improvement — higher return AND
+# lower drawdown). Exits are never gated.
+REGIME_INDEX_SYMBOL = "^JKSE"   # IHSG composite index (yfinance symbol)
+REGIME_MA_PERIOD = 50
+
 # Data-quality / freshness
 STALE_BAR_MAX_DAYS = 7     # last bar older than this ⇒ suspended/illiquid
 FLAT_STREAK_BARS = 5       # consecutive zero-volume/flat bars ⇒ suspension flag

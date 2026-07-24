@@ -91,6 +91,32 @@ def test_spike_cross_is_buy():
     assert res.signal is Signal.BUY
 
 
+def test_conservative_gate_suppresses_buy_when_risk_off():
+    # A fresh cross that is BUY in normal mode becomes HOLD when the market is
+    # risk-off (regime_ok=False).
+    df_cross, _ = _cross_frame()
+    normal = rules.evaluate("CRS", df_cross, quality=DataQuality.OK)
+    assert normal.signal is Signal.BUY
+
+    gated = rules.evaluate("CRS", df_cross, quality=DataQuality.OK, regime_ok=False)
+    assert gated.signal is Signal.HOLD
+    assert any("Conservative gate" in r for r in gated.reasons)
+
+
+def test_conservative_gate_allows_buy_when_risk_on():
+    df_cross, _ = _cross_frame()
+    ok = rules.evaluate("CRS", df_cross, quality=DataQuality.OK, regime_ok=True)
+    assert ok.signal is Signal.BUY
+
+
+def test_regime_gate_does_not_touch_sell():
+    # SELL must fire regardless of regime — exits are never gated.
+    closes = [1000.0 + i for i in range(N - 1)] + [1220.0]
+    df = _frame(closes)
+    sell = rules.evaluate("BRK", df, quality=DataQuality.OK, regime_ok=False)
+    assert sell.signal is Signal.SELL
+
+
 def test_sell_on_ma50_breakdown():
     # Uptrend held above MA50, then a daily close below MA50 → SELL (v2 rule 4).
     closes = [1000.0 + i for i in range(N - 1)] + [1220.0]  # deep close below MA50
