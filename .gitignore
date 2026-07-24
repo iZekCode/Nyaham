@@ -1,0 +1,37 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Data / cache
+*.sqlite
+*.sqlite3
+*.db
+data/*.sqlite
+data/cache.sqlite
+
+# Backtest / chart outputs
+backtest/output/
+*.png
+!docs/**/*.png
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
