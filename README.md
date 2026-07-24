@@ -12,9 +12,9 @@ serves the results over Telegram. See [plan.md](plan.md) for the full design.
 | Phase | Scope | State |
 |---|---|---|
 | **1** | Screener core (universe, fetcher, indicators, rules, scoring, chart) + tests | ✅ Done |
-| 2 | Telegram bot (PTB) + message formatter | ⏳ Next |
-| 3 | Scheduled daily scan + SQLite cache | — |
-| 4 | Backtest + parameter tuning | — |
+| **2** | Telegram bot (PTB): `/ma`, `/top5`, `/help`, `/start`, `/scan` + formatter | ✅ Done |
+| 3 | Scheduled daily scan + OHLCV cache (scan job + SQLite already wired) | ◐ Partial |
+| 4 | Backtest + parameter tuning | ⏳ Next |
 | 5 | Deployment + ops | — |
 
 ## Setup
@@ -51,6 +51,21 @@ Run the tests:
 pytest -q
 ```
 
+## Running the bot (Phase 2)
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the token.
+2. `cp .env.example .env` and set `BOT_TOKEN` and `ADMIN_CHAT_ID`.
+3. Start it (long-polling):
+
+```bash
+python -m bot.main
+```
+
+Commands: `/start`, `/help`, `/ma <ticker>`, `/top5`, and `/scan` (admin only —
+runs a full-universe scan and populates the cache that `/top5` reads).
+`/top5` never scans live; it serves the most recent completed scan. A daily
+scan job is registered for 16:30 WIB (Asia/Jakarta), skipping weekends/holidays.
+
 ## Architecture
 
 The screener core is a standalone package reused verbatim by both the bot and
@@ -68,7 +83,13 @@ screener/
   result.py          ScreenResult dataclass (shared by bot + backtest)
   screen.py          fetch → evaluate → score orchestration
   __main__.py        CLI (python -m screener)
-tests/               MA math + rule-trigger scenarios
+data/cache.py        SQLite: scan results (/top5 reads the latest scan)
+jobs/daily_scan.py   full-universe scan → persist (used by /scan + daily job)
+bot/
+  formatter.py       ScreenResult → Telegram HTML message
+  handlers.py        /ma, /top5, /help, /start, /scan, chart button
+  main.py            PTB Application, error handler, daily-job registration
+tests/               MA math + rule-trigger + formatter scenarios
 ```
 
 ### The 5 rules (source of truth: [plan.md §2](plan.md))

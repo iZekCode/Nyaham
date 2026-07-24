@@ -212,6 +212,17 @@ def evaluate(
     total = len(ma_list)
     signal = Signal.HOLD
 
+    # Data-quality gate (§4.4): suspended/stale data is untrustworthy ⇒ AVOID,
+    # regardless of what the MA stack appears to say.
+    if res.quality in (DataQuality.SUSPENDED, DataQuality.STALE):
+        res.signal = Signal.AVOID
+        res.reasons.append(
+            f"Data-quality flag ({res.quality.value}) — numbers unreliable, "
+            f"not tradeable."
+        )
+        res.verdict = "🔴 AVOID — data flag"
+        return res
+
     # Rule 4 — failed to hold an MA it recently held ⇒ SELL.
     broken = _detect_breakdown(df)
     if broken is not None:

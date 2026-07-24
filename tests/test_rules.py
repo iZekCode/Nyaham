@@ -66,6 +66,15 @@ def test_sell_on_ma_breakdown():
     assert any("Closed below MA" in r for r in res.reasons)
 
 
+def test_suspended_data_forces_avoid():
+    # A bullish-looking stack must still be AVOID when data is flagged.
+    closes = [1000 + i * 0.5 for i in range(N)]
+    df = _frame(closes)
+    res = rules.evaluate("SUSP", df, quality=DataQuality.SUSPENDED)
+    assert res.signal is Signal.AVOID
+    assert any("Data-quality flag" in r for r in res.reasons)
+
+
 def test_full_bullish_verdict():
     closes = [1000 + i * 0.5 for i in range(N)]
     df = _frame(closes)
