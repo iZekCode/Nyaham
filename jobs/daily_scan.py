@@ -13,17 +13,20 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
-from config import BATCH_REQUEST_DELAY, IDX_HOLIDAYS_2026, TIMEZONE
+from config import BATCH_REQUEST_DELAY, TIMEZONE
 from data import cache
-from screener.result import DataQuality, Signal
+from market_calendar import is_trading_day  # re-exported for callers/tests
+from screener.result import DataQuality
 from screener.screen import screen_ticker
 from universe import UNIVERSE
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["ScanSummary", "is_trading_day", "run_scan"]
 
 
 @dataclass
@@ -47,14 +50,6 @@ class ScanSummary:
             more = "" if len(self.failures) <= 8 else f" +{len(self.failures) - 8} more"
             line += f"\n⚠️ Failed: {shown}{more}"
         return line
-
-
-def is_trading_day(d: Optional[date] = None) -> bool:
-    """Weekday and not an IDX public holiday."""
-    d = d or datetime.now(ZoneInfo(TIMEZONE)).date()
-    if d.weekday() >= 5:  # Sat/Sun
-        return False
-    return d.isoformat() not in set(IDX_HOLIDAYS_2026)
 
 
 def run_scan(

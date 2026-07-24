@@ -16,7 +16,7 @@ from telegram.ext import ContextTypes
 from config import ADMIN_CHAT_ID
 from bot import formatter as fmt
 from data import cache
-from data.fetcher import get_ohlcv
+from data.fetcher import get_ohlcv_cached
 from screener.chart import render_chart
 from screener.result import DataQuality
 from screener.screen import screen_dataframe
@@ -32,7 +32,7 @@ CAPTION_LIMIT = 1024
 # --------------------------------------------------------------------------- #
 def _screen_with_df(ticker: str):
     """Fetch + screen, returning (result, df) so the chart can reuse the df."""
-    df, quality = get_ohlcv(ticker)
+    df, quality = get_ohlcv_cached(ticker)
     import pandas as pd
 
     res = screen_dataframe(ticker, df if df is not None else pd.DataFrame(), quality)

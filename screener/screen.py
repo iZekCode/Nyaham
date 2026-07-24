@@ -11,7 +11,7 @@ from typing import Optional
 
 import pandas as pd
 
-from data.fetcher import get_ohlcv
+from data.fetcher import get_ohlcv, get_ohlcv_cached
 from screener import rules, scoring
 from screener.result import ScreenResult
 
@@ -25,7 +25,8 @@ def screen_dataframe(
     return res
 
 
-def screen_ticker(ticker: str) -> ScreenResult:
-    """Fetch live data and produce a scored ``ScreenResult`` for one ticker."""
-    df, quality = get_ohlcv(ticker)
+def screen_ticker(ticker: str, use_cache: bool = True) -> ScreenResult:
+    """Fetch data (cache-aware by default) and produce a scored ``ScreenResult``."""
+    fetch = get_ohlcv_cached if use_cache else get_ohlcv
+    df, quality = fetch(ticker)
     return screen_dataframe(ticker, df if df is not None else pd.DataFrame(), quality)

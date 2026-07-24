@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS scan_results (
 );
 CREATE INDEX IF NOT EXISTS idx_scan_date_signal
     ON scan_results (scan_date, signal, score DESC);
+
+CREATE TABLE IF NOT EXISTS ohlcv (
+    ticker  TEXT NOT NULL,
+    date    TEXT NOT NULL,
+    open    REAL,
+    high    REAL,
+    low     REAL,
+    close   REAL,
+    volume  REAL,
+    PRIMARY KEY (ticker, date)
+);
 """
 
 
@@ -134,6 +145,86 @@ def get_top_buys(limit: int = 5, scan_date: Optional[str] = None) -> list[sqlite
             (date, Signal.BUY.value, limit),
         ).fetchall()
     return list(rows)
+
+
+# --------------------------------------------------------------------------- #
+# OHLCV bar cache (§6)
+# --------------------------------------------------------------------------- #
+_OHLCV_COLS = ["Open", "High", "Low", "Close", "Volume"]
+
+
+def save_ohlcv(ticker: str, df) -> None:
+    """Upsert a ticker's daily bars. Index must be datetime-like."""
+    import pandas as pd  # local import keeps cache import-light
+
+    if df is None or df.empty:
+        return
+    ticker = ticker.upper()
+    rows = []
+    for idx, row in df.iterrows():
+        d = idx.date().isoformat() if isinstance(idx, pd.Timestamp) else str(idx)[:10]
+        rows.append(
+            (
+                ticker,
+                d,
+                _num(row.get("Open")),
+                _num(row.get("High")),
+                _num(row.get("Low")),
+                _num(row.get("Close")),
+                _num(row.get("Volume")),
+            )
+        )
+    with _connect() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO ohlcv "
+            "(ticker, date, open, high, low, close, volume) "
+            "VALUES (?,?,?,?,?,?,?)",
+            rows,
+        )
+
+
+def load_ohlcv(ticker: str):
+    """Return a cached OHLCV DataFrame (DatetimeIndex) or None if absent."""
+    import pandas as pd
+
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT date, open, high, low, close, volume FROM ohlcv "
+            "WHERE ticker = ? ORDER BY date ASC",
+            (ticker.upper(),),
+        ).fetchall()
+    if not rows:
+        return None
+    df = pd.DataFrame(
+        [dict(r) for r in rows]
+    ).rename(
+        columns={
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close",
+            "volume": "Volume",
+        }
+    )
+    df.index = pd.to_datetime(df.pop("date"))
+    return df[_OHLCV_COLS]
+
+
+def ohlcv_last_date(ticker: str):
+    """Most recent cached bar date (datetime.date) for a ticker, or None."""
+    from datetime import date as _date
+
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT MAX(date) AS d FROM ohlcv WHERE ticker = ?", (ticker.upper(),)
+        ).fetchone()
+    if not row or not row["d"]:
+        return None
+    return _date.fromisoformat(row["d"])
+
+
+def _num(v):
+    return None if v is None else float(v)
 
 
 def scan_summary(scan_date: Optional[str] = None) -> dict[str, int]:

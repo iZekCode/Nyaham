@@ -106,3 +106,41 @@ def get_ohlcv(
     if last_err:
         logger.error("Giving up on %s after %d attempts", symbol, FETCH_MAX_RETRIES)
     return None, DataQuality.NO_DATA
+
+
+def get_ohlcv_cached(
+    ticker: str, period: str = FETCH_PERIOD
+) -> tuple[Optional[pd.DataFrame], DataQuality]:
+    """Cache-aware fetch (§6): serve stored bars when they're up to date.
+
+    The cache is "fresh" when its newest bar is at least the last completed
+    trading day (see :mod:`market_calendar`). On a miss we fetch live and
+    persist the bars so subsequent ``/ma`` calls are instant.
+    """
+    from config import OHLCV_CACHE_ENABLED
+
+    if not OHLCV_CACHE_ENABLED:
+        return get_ohlcv(ticker, period)
+
+    from data import cache
+    from market_calendar import last_completed_trading_day
+
+    try:
+        cache.init_db()
+        last = cache.ohlcv_last_date(ticker)
+        if last is not None and last >= last_completed_trading_day():
+            df = cache.load_ohlcv(ticker)
+            if df is not None and not df.empty:
+                return df, _validate(df)
+    except Exception as exc:  # noqa: BLE001 — cache must never break a fetch
+        logger.warning("OHLCV cache read failed for %s: %s", ticker, exc)
+
+    df, quality = get_ohlcv(ticker, period)
+    if df is not None and not df.empty:
+        try:
+            from data import cache as _cache
+
+            _cache.save_ohlcv(ticker, df)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OHLCV cache write failed for %s: %s", ticker, exc)
+    return df, quality

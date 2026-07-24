@@ -13,7 +13,7 @@ serves the results over Telegram. See [plan.md](plan.md) for the full design.
 |---|---|---|
 | **1** | Screener core (universe, fetcher, indicators, rules, scoring, chart) + tests | ✅ Done |
 | **2** | Telegram bot (PTB): `/ma`, `/top5`, `/help`, `/start`, `/scan` + formatter | ✅ Done |
-| 3 | Scheduled daily scan + OHLCV cache (scan job + SQLite already wired) | ◐ Partial |
+| **3** | Scheduled daily scan + SQLite scan cache + OHLCV bar cache + trading calendar | ✅ Done |
 | 4 | Backtest + parameter tuning | ⏳ Next |
 | 5 | Deployment + ops | — |
 
@@ -83,7 +83,8 @@ screener/
   result.py          ScreenResult dataclass (shared by bot + backtest)
   screen.py          fetch → evaluate → score orchestration
   __main__.py        CLI (python -m screener)
-data/cache.py        SQLite: scan results (/top5 reads the latest scan)
+market_calendar.py   IDX trading-day + last-completed-bar helpers (WIB)
+data/cache.py        SQLite: scan results + OHLCV bar cache (instant repeat /ma)
 jobs/daily_scan.py   full-universe scan → persist (used by /scan + daily job)
 bot/
   formatter.py       ScreenResult → Telegram HTML message

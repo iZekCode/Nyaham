@@ -86,13 +86,35 @@ CHART_DPI = 100
 # Scheduled scan (§6) — Asia/Jakarta
 # --------------------------------------------------------------------------- #
 TIMEZONE = "Asia/Jakarta"
-SCAN_HOUR = 16
+MARKET_CLOSE_HOUR = 16      # IDX regular session closes 16:00 WIB
+MARKET_CLOSE_MINUTE = 0
+SCAN_HOUR = 16              # daily scan runs after close, with a data buffer
 SCAN_MINUTE = 30
 
+# OHLCV bar cache (§6) — reuse stored bars so /ma on a scanned ticker is instant.
+OHLCV_CACHE_ENABLED = True
+
 # IDX public holidays — manually updated yearly (YYYY-MM-DD). Scan skips these.
+#
+# ⚠️ IMPORTANT: this is a BEST-EFFORT list of fixed-date national holidays only.
+# It is INCOMPLETE. Movable religious holidays (Idul Fitri, Idul Adha, Nyepi,
+# Waisak, Ascension, Islamic New Year, Maulid) and government "cuti bersama"
+# (collective-leave) days shift yearly and MUST be filled in from the official
+# IDX trading-holiday calendar ("Kalender Libur Bursa") before relying on the
+# scheduled scan:  https://www.idx.co.id  →  About IDX  →  Trading Holiday.
+# A missing holiday only means one wasted scan (harmless); the bigger risk is
+# NOT here since we never mark a real trading day as a holiday.
 IDX_HOLIDAYS_2026: tuple[str, ...] = (
-    # Placeholder — populate from the official IDX trading-holiday calendar.
+    "2026-01-01",  # New Year's Day
+    "2026-05-01",  # Labour Day
+    "2026-06-01",  # Pancasila Day
+    "2026-08-17",  # Independence Day
+    "2026-12-25",  # Christmas Day
+    # TODO: add movable religious holidays + cuti bersama from the IDX calendar.
 )
+
+# Active holiday set consumed by market_calendar (extend per-year above).
+IDX_HOLIDAYS: tuple[str, ...] = IDX_HOLIDAYS_2026
 
 # --------------------------------------------------------------------------- #
 # Backtest cost model (§7.1)
