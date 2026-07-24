@@ -1,23 +1,30 @@
-# IHSG MA Screener — Telegram Bot
+# Nyaham — IHSG MA Screener Telegram Bot
 
 Screens IDX (Indonesia Stock Exchange) stocks by moving-average alignment and
-serves the results over Telegram. See [plan.md](plan.md) for the full design.
+serves the results over Telegram. See [plan.md](plan.md) for the original design
+and [backtest/FINDINGS.md](backtest/FINDINGS.md) for the strategy research.
 
-- **`/ma <ticker>`** — detailed single-stock MA analysis + a candlestick chart
-  with all six MA lines and the computed Buy / TP / Stop-loss levels.
-- **`/top5`** — the five highest-confidence BUY candidates from the latest scan.
+**Commands**
 
-## Status
+- **`/ma <ticker> [conservative]`** — single-stock MA analysis (6-MA stack,
+  trend, trade plan) + a candlestick chart with all MA lines.
+- **`/market`** — is the IHSG index risk-on or risk-off? (index vs its MA50) + chart.
+- **`/top5 [conservative]`** — the best fresh MA50 breakouts from the latest scan.
+- **`/clear`** — delete the bot's recent messages from the chat.
+- **`/scan`** — admin-only: run a full-universe scan now.
+- **`/start`, `/help`** — intro and command help.
+
+## Status — all phases complete
 
 | Phase | Scope | State |
 |---|---|---|
 | **1** | Screener core (universe, fetcher, indicators, rules, scoring, chart) + tests | ✅ Done |
-| **2** | Telegram bot (PTB): `/ma`, `/top5`, `/help`, `/start`, `/scan` + formatter | ✅ Done |
-| **3** | Scheduled daily scan + SQLite scan cache + OHLCV bar cache + trading calendar | ✅ Done |
-| **4** | Backtest engine + metrics + grid-search tuner + extensive strategy research | ✅ Done — see [FINDINGS.md](backtest/FINDINGS.md) |
-| **5** | Deployment + ops (Docker, systemd, logging, backups, runbook) | ✅ Done — see [DEPLOY.md](DEPLOY.md) |
+| **2** | Telegram bot (PTB): commands + formatter | ✅ Done |
+| **3** | Scheduled daily scan + SQLite scan/OHLCV cache + trading calendar | ✅ Done |
+| **4** | Backtest engine + metrics + tuner + extensive strategy research | ✅ Done — [FINDINGS.md](backtest/FINDINGS.md) |
+| **5** | Deployment + ops (Docker, systemd, logging, backups, runbook) | ✅ Done — [DEPLOY.md](DEPLOY.md) |
 
-## Setup
+## Quick start
 
 Requires Python 3.11+.
 
@@ -25,146 +32,143 @@ Requires Python 3.11+.
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pytest -q          # 71 tests
 ```
 
-For the bot (Phase 2+), copy `.env.example` to `.env` and fill in `BOT_TOKEN`
-and `ADMIN_CHAT_ID`. The screener core (below) needs no secrets.
+The **screener core / CLI / backtest** need no secrets. The **bot** needs a
+`.env` (`cp .env.example .env`, then set `BOT_TOKEN` from
+[@BotFather](https://t.me/BotFather) and `ADMIN_CHAT_ID`).
 
-## Usage (Phase 1)
+## Usage
 
-Screen one or more tickers from the terminal:
+**Screen from the terminal** (no bot needed):
 
 ```bash
-python -m screener BBCA
-python -m screener BBCA TLKM ANTM
+python -m screener BBCA                 # one ticker
+python -m screener BBCA TLKM ANTM       # several
+python -m screener BBCA --conservative  # gate on the market regime
+python universe.py                      # list the scan universe
 ```
 
-List the scan universe:
-
-```bash
-python universe.py
-```
-
-Run the tests:
-
-```bash
-pytest -q
-```
-
-## Running the bot (Phase 2)
-
-1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the token.
-2. `cp .env.example .env` and set `BOT_TOKEN` and `ADMIN_CHAT_ID`.
-3. Start it (long-polling):
+**Run the bot locally** (long-polling):
 
 ```bash
 python -m bot.main
 ```
 
-Commands: `/start`, `/help`, `/ma <ticker> [conservative]`, `/top5
-[conservative]`, and `/scan` (admin only — runs a full-universe scan and
-populates the cache that `/top5` reads). `/top5` never scans live; it serves
-the most recent completed scan. A daily scan job is registered for 16:30 WIB
-(Asia/Jakarta), skipping weekends/holidays.
+`/top5` never scans live — it serves the most recent completed scan; run
+`/scan` (admin) once to populate it. A daily scan is scheduled for **16:30 WIB**
+(Asia/Jakarta), skipping weekends and holidays.
 
-## Deploying (Phase 5)
+## Deploying (24/7)
 
-For 24/7 hosting, use Docker (recommended) or systemd — both auto-restart:
+Docker (recommended) — auto-restarts on crash/reboot:
 
 ```bash
-cp .env.example .env    # set BOT_TOKEN + ADMIN_CHAT_ID
+cp .env.example .env    # BOT_TOKEN + ADMIN_CHAT_ID
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-Full hosting guide, secrets/token rotation, logging, backups, and the
-maintenance runbook (universe/holiday updates) are in [DEPLOY.md](DEPLOY.md).
+Runs as container **`nyaham-bot`** (compose project `nyaham`). A systemd unit,
+hosting options, token rotation, logging, backups, and the maintenance runbook
+(universe/holiday updates) are in [DEPLOY.md](DEPLOY.md).
+
+> ⚠️ **One instance per bot token.** Two pollers → Telegram `409 Conflict`.
+> Don't run the local process and a container (or two servers) on the same token.
+
+## The strategy — `cross_pure`
+
+The live strategy, chosen after the Phase-4 research (below):
+
+- **BUY** — a *fresh breakout*: today's daily close crossed **above MA50**
+  (yesterday's was at/below it). Entries are events — a name that crossed weeks
+  ago is "in trend", not a new BUY.
+- **SELL** — a fresh daily close **below MA50** after holding above it. The exit
+  is a *condition*, not a price target — **there is no take-profit** (nearest
+  resistance is shown as information only).
+- **AVOID** — below all six MAs (clear downtrend) or data-quality flags.
+- **HOLD** — everything else, with context (*in trend* vs *below MA50, waiting
+  for the trigger*).
+
+The 6-MA stack (5/10/20/50/100/200), trend tiers, and volume are displayed as
+context. Key parameters (`EXIT_MA_PERIOD` 50, `REGIME_MA_PERIOD` 50,
+`SUPPORT_LOOKBACK` 5, `MIN_BARS` 250) live in `config.py`.
+
+**Modes** — `/ma` and `/top5` accept an optional `conservative` (or `c`):
+
+- **normal** (default) — every fresh breakout.
+- **conservative** — only signals BUY when the market is risk-on (IHSG `^JKSE`
+  above its own MA50); holds cash otherwise. In backtests the MA50 regime gate
+  was a Pareto improvement (higher return *and* lower drawdown) on the
+  least-biased data. Exits are never gated.
+
+## Strategy research (Phase 4)
+
+```bash
+python -m backtest --limit 20 --period 3y      # report
+python -m backtest --tune --limit 20           # grid-search tuning
+```
+
+The engine reuses `rules.evaluate` unchanged (no look-ahead: the day-*t* signal
+is evaluated on the slice through *t*; entry fills at the *t+1* open).
+
+The research arc — documented in full, honestly, in
+[backtest/FINDINGS.md](backtest/FINDINGS.md) — ran from *"the plan's original
+MA-support strategy loses money and fails every out-of-sample test"* to
+`cross_pure`, the one configuration with a consistent multi-decade profile
+(positive expectancy in **19 of 26 years**, ~16,000 trades, controlled losses in
+crashes). Along the way it **rejected take-profits and partial scale-outs in
+four forms** (they cap the fat-tail winners), found **diversification** (100
+small positions) cuts drawdown far better than tight stops, and validated the
+**MA50 regime gate** as the one refinement that improves risk-adjusted return.
+
+> ⚠️ **Honest caveats (read before trusting it):** absolute returns are inflated
+> by **survivorship bias** (current index constituents over history), and the
+> edge is **not formally out-of-sample validated** for entry — the winning
+> config emerged from repeated work on overlapping windows. It's a **~19%
+> win-rate trend-follower** with deep drawdowns. Treat the bot as an
+> analysis/screening tool, **not** a proven money-maker.
 
 ## Architecture
 
-The screener core is a standalone package reused verbatim by both the bot and
-the backtester — the code being screened live is the code being backtested.
+The screener core is a standalone package reused verbatim by the bot **and** the
+backtester — the code screened live is the code backtested.
 
 ```
-config.py            thresholds, MA periods, weights, paths (single source of truth)
-universe.py          LQ45 ∪ IDX80 ∪ Kompas100, merged & deduplicated (112 tickers)
-data/fetcher.py      yfinance wrapper: retry/backoff + data-quality validation
+config.py            thresholds, MA periods, regime gate, paths (single source of truth)
+universe.py          LQ45 ∪ IDX80 ∪ Kompas100, merged & deduplicated (~112 tickers)
+market_calendar.py   IDX trading-day + last-completed-bar helpers (WIB)
+data/
+  fetcher.py         yfinance wrapper: retry/backoff, validation, OHLCV cache, index fetch
+  cache.py           SQLite: scan results + scan_meta (regime) + OHLCV bars
 screener/
   indicators.py      MAs, distances, RVOL, buy-pressure, IDX tick-size rounding
-  rules.py           the 5 trading rules → BUY / SELL / HOLD / AVOID
+  rules.py           cross_pure signal → BUY / SELL / HOLD / AVOID (+ regime gate)
   scoring.py         0–100 confidence score
+  params.py          tunable Params bundle (lets the tuner vary thresholds)
+  regime.py          ^JKSE risk-on/off (conservative mode + /market)
   chart.py           candlestick + 6-MA overlay → PNG bytes (headless)
   result.py          ScreenResult dataclass (shared by bot + backtest)
-  screen.py          fetch → evaluate → score orchestration
+  screen.py          fetch → evaluate → score orchestration (+ screen_index)
   __main__.py        CLI (python -m screener)
-market_calendar.py   IDX trading-day + last-completed-bar helpers (WIB)
-data/cache.py        SQLite: scan results + OHLCV bar cache (instant repeat /ma)
-jobs/daily_scan.py   full-universe scan → persist (used by /scan + daily job)
+jobs/daily_scan.py   full-universe scan → persist + capture regime
 bot/
-  formatter.py       ScreenResult → Telegram HTML message
-  handlers.py        /ma, /top5, /help, /start, /scan, chart button
-  main.py            PTB Application, error handler, daily-job registration
-tests/               MA math + rule-trigger + formatter scenarios
+  formatter.py       ScreenResult → Telegram HTML (/ma, /market, /top5)
+  handlers.py        command handlers + inline chart button
+  main.py            PTB Application, error handler, start/stop heartbeats, daily job
+backtest/
+  engine.py metrics.py tuner.py __main__.py   core walk-forward + tuning
+  side_*.py          research experiments (ma50, v2/v3, breakout, portfolio, scale-out …)
+  FINDINGS.md        the full research write-up
+deploy/              Dockerfile, docker-compose.yml, nyaham-bot.service, backup.sh, server-setup.sh
+tests/               MA math, rule/signal scenarios, formatter, cache
 ```
-
-### The strategy (cross_pure — replaced the original 5-rule logic)
-
-- **BUY** — a *fresh breakout*: today's daily close crossed **above MA50**
-  (yesterday's close was at/below it). Entries are events — a stock that
-  crossed weeks ago is "in trend", not a new BUY.
-- **SELL** — a fresh daily close **below MA50** after holding above it.
-  The exit is a *condition*, not a price target; there is **no take-profit**
-  (nearest resistance is shown as information only).
-- **AVOID** — below all six MAs (clear downtrend) or data-quality flags.
-- **HOLD** — everything else, with context: *in trend* (stay in if entered)
-  or *below MA50* (the entry trigger is a daily close back above it).
-
-The 6-MA stack, trend tiers, and volume metrics remain as displayed context.
-
-**Modes** — both `/ma` and `/top5` take an optional `conservative` (or `c`):
-
-- **normal** (default) — every fresh breakout.
-- **conservative** — only signals BUY when the market itself is risk-on
-  (IHSG `^JKSE` above its own MA50). In backtests this kept ~most of the return
-  while cutting max drawdown sharply (a Pareto improvement on the least-biased
-  data). When the market is risk-off, conservative `/top5` recommends holding
-  cash. Exits are never gated.
-
-cross_pure emerged from the Phase 4 investigation as the only configuration
-with a consistent multi-decade profile (positive expectancy in 19 of 26 years
-on ~16,000 trades, controlled losses in crashes) — full story and the honest
-caveats (survivorship bias unresolved; not formally validated) in
-[backtest/FINDINGS.md](backtest/FINDINGS.md).
-
-Key parameters (`EXIT_MA_PERIOD` 50, `REGIME_MA_PERIOD` 50, `SUPPORT_LOOKBACK`
-5 days, `MIN_BARS` 250) live in `config.py`.
-
-## Backtest (Phase 4)
-
-```bash
-python -m backtest --limit 20 --period 3y      # report on 20 tickers
-python -m backtest --tune --limit 20           # grid-search parameter tuning
-```
-
-The engine reuses `rules.evaluate` unchanged (no look-ahead: signal on day *t*
-is evaluated on the slice through *t*, entry fills at the *t+1* open). Metrics,
-benchmarks (buy-and-hold IHSG + equal-weight universe), and an equity-curve
-CSV/PNG are written to `backtest/output/`.
-
-> ⚠️ **Honest finding:** with the plan's initial default thresholds — and across
-> the **entire** tuning grid — the strategy **loses money and underperforms
-> buy-and-hold**. Average holding is ~1 day: trades stop out almost immediately
-> because the MA-based stop sits just below the entry (the entry condition is
-> "near support", so the next MA down is very close, especially in clustered-MA
-> zones). No parameter set in the grid rescues it. Deliberately, **no losing
-> parameters were written into `config.py`.** The strategy logic needs
-> refinement (wider/ATR stops, cluster-as-zone stops, a trend filter, longer
-> holds) before it's worth deploying signals. **Full write-up:**
-> [backtest/FINDINGS.md](backtest/FINDINGS.md).
 
 ## Notes & caveats
 
 - Data is from yfinance (`.JK`, daily, `auto_adjust=True`), delayed ~15 min —
   fine for daily-MA signals, **not** for intraday trading.
 - Universe lists carry an effective date and must be refreshed after each IDX
-  rebalancing (~Feb & Aug); see the update procedure in `universe.py`.
-- **Not financial advice** — informational tooling only.
+  rebalancing (~Feb & Aug); see the procedure in `universe.py`.
+- **Not financial advice** — informational tooling only, with disclaimers on
+  every message.
