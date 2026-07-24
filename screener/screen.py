@@ -11,10 +11,10 @@ from typing import Optional
 
 import pandas as pd
 
-from data.fetcher import get_ohlcv, get_ohlcv_cached
+from data.fetcher import get_index_ohlcv, get_ohlcv, get_ohlcv_cached
 from screener import rules, scoring
 from screener.params import Params
-from screener.result import ScreenResult
+from screener.result import DataQuality, ScreenResult
 
 
 def screen_dataframe(
@@ -50,3 +50,19 @@ def screen_ticker(
         ticker, df if df is not None else pd.DataFrame(), quality,
         regime_ok=regime_ok,
     )
+
+
+def screen_index(symbol: str, label: str):
+    """Screen a raw index (e.g. ``^JKSE``) with cross_pure. Returns (res, df).
+
+    The index is analyzed exactly like a stock (MA stack, MA50 cross state), so
+    a fresh cross of the index above/below its MA50 IS the risk-on/off flip that
+    conservative mode gates on. df is returned for charting.
+    """
+    df, quality = get_index_ohlcv(symbol)
+    if df is None:
+        empty = ScreenResult(ticker=label, scan_date="", quality=DataQuality.NO_DATA)
+        return empty, None
+    res = rules.evaluate(label, df, quality=quality)
+    scoring.compute_score(res)
+    return res, df

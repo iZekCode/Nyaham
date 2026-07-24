@@ -10,7 +10,7 @@ from __future__ import annotations
 import html
 from typing import Optional
 
-from config import EXIT_MA_PERIOD
+from config import EXIT_MA_PERIOD, REGIME_INDEX_SYMBOL
 from screener.result import DataQuality, ScreenResult, Signal
 
 DISCLAIMER = "⚠️ Delayed data · informational only · not financial advice."
@@ -165,6 +165,64 @@ def format_ma_caption(res: ScreenResult) -> str:
         f"Exit&lt;{rupiah(res.stop_loss)}\n"
         f"{reason}"
     )
+
+
+def format_market(res: ScreenResult) -> str:
+    """Market overview for the index, reframing cross_pure as risk-on/off state."""
+    if res.quality is DataQuality.NO_DATA:
+        return f"❓ <b>{html.escape(res.ticker)}</b>\n{_quality_note(res)}"
+
+    ma50 = next((m for m in res.ma if m.period == EXIT_MA_PERIOD), None)
+    risk_on = ma50 is not None and ma50.above
+    dot = "🟢" if res.change_pct >= 0 else "🔴"
+
+    lines: list[str] = []
+    lines.append(
+        f"📈 <b>MARKET · IHSG</b>  <code>({html.escape(REGIME_INDEX_SYMBOL)})</code>"
+    )
+    lines.append(f"💰 <b>{rupiah(res.price)}</b>  {dot} {res.change_pct:+.2f}%")
+    lines.append("")
+
+    # Regime headline (the line conservative mode gates on).
+    if ma50 is not None:
+        state = "🟢 <b>RISK-ON</b>" if risk_on else "🔴 <b>RISK-OFF</b>"
+        rel = "above" if risk_on else "below"
+        lines.append(
+            f"🛡 {state} — index {rel} MA{EXIT_MA_PERIOD} "
+            f"({rupiah(ma50.value)}, {ma50.distance_pct * 100:+.1f}%)"
+        )
+    if res.signal is Signal.BUY:
+        lines.append(f"⚡ Just crossed <b>ABOVE</b> MA{EXIT_MA_PERIOD} — flipped risk-on today")
+    elif res.signal is Signal.SELL:
+        lines.append(f"⚡ Just closed <b>BELOW</b> MA{EXIT_MA_PERIOD} — flipped risk-off today")
+    lines.append("")
+
+    # MA stack for context.
+    for m in res.ma:
+        mark = "✅" if m.above else "❌"
+        lines.append(
+            f"{mark} MA{m.period:<3} {rupiah(m.value):>8}  "
+            f"<code>{m.distance_pct * 100:+5.1f}%</code>"
+        )
+    lines.append("")
+
+    tier_emoji = {"Short": "⚡", "Medium": "📊", "Long": "⛰"}
+    for tr in res.trends:
+        d = "🟢" if tr.bullish else "⚪"
+        lines.append(f"{tier_emoji.get(tr.label, '•')} {tr.label:<7} {d} "
+                     f"{'Bullish' if tr.bullish else 'Not yet'}")
+    lines.append("")
+
+    if risk_on:
+        lines.append("🗣 Market is risk-on — conservative mode takes fresh breakouts.")
+    else:
+        lines.append(
+            "🗣 Market is risk-off — conservative mode holds cash (blocks new "
+            "BUYs) until the index reclaims MA50."
+        )
+    lines.append("")
+    lines.append(f"<i>{html.escape(DISCLAIMER)}</i>")
+    return "\n".join(lines)
 
 
 def format_top5(rows: list, scan_date: str) -> str:

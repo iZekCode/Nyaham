@@ -8,6 +8,9 @@ services:
     image: ihsg-skem-bot:latest
     container_name: ihsg-skem-bot
     restart: unless-stopped        # auto-restart on crash / reboot (§8.2)
+    # PTB may be mid getUpdates long-poll when SIGTERM lands; give it room to
+    # shut down gracefully (and send the "Bot stopped" notice) before SIGKILL.
+    stop_grace_period: 30s
     env_file:
       - ../.env                    # BOT_TOKEN, ADMIN_CHAT_ID (never committed)
     environment:

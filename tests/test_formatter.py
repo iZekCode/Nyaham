@@ -124,6 +124,32 @@ def test_bottom_line_varies_by_signal():
     assert "below every MA" in avoid
 
 
+def test_format_market_risk_on_and_off():
+    # Risk-on: price above MA50.
+    r = _result(price=6200)
+    r.ma = [MAStatus(50, 6000, True, 0.033), MAStatus(200, 5800, True, 0.069)]
+    r.signal = Signal.HOLD
+    on = fmt.format_market(r)
+    assert "IHSG" in on
+    assert "RISK-ON" in on
+    assert "holds cash" not in on
+
+    # Risk-off: price below MA50.
+    r2 = _result(price=5900)
+    r2.ma = [MAStatus(50, 6000, False, -0.017)]
+    r2.signal = Signal.HOLD
+    off = fmt.format_market(r2)
+    assert "RISK-OFF" in off
+    assert "holds cash" in off
+
+
+def test_format_market_flags_fresh_cross():
+    r = _result(price=6050)
+    r.ma = [MAStatus(50, 6000, True, 0.008)]
+    r.signal = Signal.BUY   # fresh cross above MA50
+    assert "flipped risk-on today" in fmt.format_market(r)
+
+
 def test_gated_breakout_renders_conservative_message():
     # A regime-gated breakout (HOLD + regime_gated flag) reads as gated, not
     # as a normal entry.

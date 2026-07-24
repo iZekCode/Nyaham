@@ -106,13 +106,39 @@ async def _on_startup(app: Application) -> None:
         logger.warning("Could not send startup heartbeat to admin")
 
 
+async def _on_stop(app: Application) -> None:
+    """Heartbeat: tell the admin the bot is going down (graceful stops only).
+
+    Fires on SIGTERM/SIGINT (docker stop, systemctl stop, Ctrl-C). A hard crash
+    (kill -9, OOM, power loss) can't notify — the missing daily heartbeat and
+    the next 'Bot started' are the signals for those.
+    """
+    if not ADMIN_CHAT_ID:
+        return
+    try:
+        await app.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text="🛑 Bot stopped. It won't respond until restarted.",
+        )
+    except Exception:  # noqa: BLE001 — never let shutdown notify crash shutdown
+        logger.warning("Could not send shutdown heartbeat to admin")
+
+
 def build_application() -> Application:
-    app = Application.builder().token(BOT_TOKEN).post_init(_on_startup).build()
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(_on_startup)
+        .post_stop(_on_stop)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("help", handlers.help_cmd))
     app.add_handler(CommandHandler("ma", handlers.ma))
+    app.add_handler(CommandHandler("market", handlers.market))
     app.add_handler(CommandHandler("top5", handlers.top5))
+    app.add_handler(CommandHandler("clear", handlers.clear))
     app.add_handler(CommandHandler("scan", handlers.scan))
     app.add_handler(CallbackQueryHandler(handlers.chart_callback, pattern=r"^chart:"))
     app.add_error_handler(_error_handler)

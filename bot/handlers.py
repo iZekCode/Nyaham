@@ -61,7 +61,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "👋 <b>IHSG MA Screener</b>\n\n"
         "I analyze IDX stocks by moving-average alignment.\n\n"
         "• <b>/ma &lt;ticker&gt;</b> — full analysis + chart (e.g. <code>/ma BBCA</code>)\n"
-        "• <b>/top5</b> — today's best BUY setups\n"
+        "• <b>/market</b> — is the market risk-on or risk-off?\n"
+        "• <b>/top5</b> — today's best breakout setups\n"
         "• <b>/help</b> — how it works\n\n"
         f"<i>{fmt.DISCLAIMER}</i>",
         parse_mode=ParseMode.HTML,
@@ -72,7 +73,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "<b>Commands</b>\n"
         "• <b>/ma &lt;ticker&gt; [conservative]</b> — MA stack, trend, plan + chart\n"
-        "• <b>/top5 [conservative]</b> — best fresh breakouts from the last scan\n\n"
+        "• <b>/market</b> — IHSG index: risk-on/off state + chart\n"
+        "• <b>/top5 [conservative]</b> — best fresh breakouts from the last scan\n"
+        "• <b>/clear</b> — delete my recent messages from this chat\n\n"
         "<b>The strategy (cross_pure)</b>\n"
         "🟢 <b>BUY</b> — a daily close crosses <i>above</i> MA50 (fresh breakout)\n"
         "🔴 <b>SELL</b> — a daily close prints <i>below</i> MA50 (structure broke)\n"
@@ -160,6 +163,82 @@ async def ma(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         photo=png, caption=caption, parse_mode=ParseMode.HTML
     )
     if len(text) > CAPTION_LIMIT:
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
+# --------------------------------------------------------------------------- #
+# /clear — delete the bot's recent messages
+# --------------------------------------------------------------------------- #
+async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Delete the bot's own recent messages in this chat.
+
+    Telegram only lets a bot delete messages IT sent, under 48h old — it cannot
+    delete the user's own messages in a private chat, or older history. We walk
+    backwards from the /clear message trying each id, skipping what we can't
+    touch, and stop after a long run of failures (older/foreign messages).
+    """
+    chat_id = update.effective_chat.id
+    anchor = update.message.message_id
+    deleted = 0
+    consecutive_fail = 0
+    for mid in range(anchor, max(0, anchor - 200), -1):
+        try:
+            await context.bot.delete_message(chat_id, mid)
+            deleted += 1
+            consecutive_fail = 0
+        except Exception:  # noqa: BLE001 — expected for foreign/old messages
+            consecutive_fail += 1
+            if consecutive_fail >= 40:
+                break
+    await context.bot.send_message(
+        chat_id,
+        f"🧹 Deleted <b>{deleted}</b> of my recent messages.\n"
+        "<i>Telegram only lets me delete my own messages under 48h old — your "
+        "typed commands and older history stay. For a full wipe: chat menu → "
+        "Clear History.</i>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# /market — IHSG index overview + regime state
+# --------------------------------------------------------------------------- #
+def _screen_index_with_df():
+    from config import REGIME_INDEX_SYMBOL
+    from screener.screen import screen_index
+
+    return screen_index(REGIME_INDEX_SYMBOL, "IHSG")
+
+
+async def market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    status = await update.message.reply_text("⏳ Fetching IHSG…")
+    try:
+        res, df = await asyncio.to_thread(_screen_index_with_df)
+    except Exception:  # noqa: BLE001
+        logger.exception("/market failed")
+        await status.edit_text("😵 Couldn't fetch the index right now. Try again.")
+        return
+
+    if res.quality is DataQuality.NO_DATA or df is None:
+        await status.edit_text("😵 No index data available right now.")
+        return
+
+    text = fmt.format_market(res)
+    try:
+        png = await asyncio.to_thread(_render, res, df)
+    except Exception:  # noqa: BLE001 — chart optional
+        logger.exception("Market chart render failed")
+        png = None
+
+    await status.delete()
+    if png is None:
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return
+    caption = text if len(text) <= CAPTION_LIMIT else None
+    await update.message.reply_photo(
+        photo=png, caption=caption or "📈 IHSG", parse_mode=ParseMode.HTML
+    )
+    if caption is None:
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 

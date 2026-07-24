@@ -108,6 +108,44 @@ def get_ohlcv(
     return None, DataQuality.NO_DATA
 
 
+def get_index_ohlcv(
+    symbol: str, period: str = "2y"
+) -> tuple[Optional[pd.DataFrame], DataQuality]:
+    """Fetch a raw index symbol (e.g. ``^JKSE``) — no ``.JK`` suffix.
+
+    Uses the same retry/backoff as :func:`get_ohlcv` but SKIPS the volume-based
+    suspension check: indices legitimately report zero volume in yfinance, which
+    the stock validator would misread as SUSPENDED. Quality is OK when bars are
+    present and fresh; INSUFFICIENT_DATA when history is too short for MA200.
+    """
+    last_err: Optional[Exception] = None
+    for attempt in range(FETCH_MAX_RETRIES):
+        try:
+            df = _download(symbol, period)
+            if df is not None:
+                quality = DataQuality.OK
+                last_date = df.index[-1]
+                if isinstance(last_date, pd.Timestamp):
+                    age = (pd.Timestamp.now(tz=last_date.tz) - last_date).days
+                    if age > STALE_BAR_MAX_DAYS:
+                        quality = DataQuality.STALE
+                if len(df) < MIN_BARS:
+                    quality = DataQuality.INSUFFICIENT_DATA
+                return df, quality
+            logger.warning("Empty index data for %s (attempt %d)", symbol, attempt + 1)
+        except Exception as exc:  # noqa: BLE001 — network layer
+            last_err = exc
+            logger.warning("Index fetch error %s (attempt %d): %s",
+                           symbol, attempt + 1, exc)
+        if attempt < FETCH_MAX_RETRIES - 1:
+            time.sleep(FETCH_BACKOFF_BASE * (2 ** attempt))
+
+    if last_err:
+        logger.error("Giving up on index %s after %d attempts",
+                     symbol, FETCH_MAX_RETRIES)
+    return None, DataQuality.NO_DATA
+
+
 def get_ohlcv_cached(
     ticker: str, period: str = FETCH_PERIOD
 ) -> tuple[Optional[pd.DataFrame], DataQuality]:
